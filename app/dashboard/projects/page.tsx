@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 
 type DelayRisk = "Low" | "Medium" | "High";
 
@@ -110,57 +111,41 @@ function getNumberValue(value: string) {
   return numberValue;
 }
 
+function getPercentValue(value: string) {
+  const numberValue = Number(value);
+
+  if (Number.isNaN(numberValue)) {
+    return 0;
+  }
+
+  if (numberValue < 0) {
+    return 0;
+  }
+
+  if (numberValue > 100) {
+    return 100;
+  }
+
+  return numberValue;
+}
+
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>(defaultProjects);
   const [formData, setFormData] = useState<ProjectFormData>(initialFormData);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
 
   useEffect(() => {
     const storedProjects = localStorage.getItem(STORAGE_KEY);
 
     if (storedProjects) {
-      setProjects(JSON.parse(storedProjects));
+      const parsedProjects: Project[] = JSON.parse(storedProjects);
+      setProjects(parsedProjects);
     } else {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultProjects));
     }
   }, []);
 
-  function saveProjects(updatedProjects: Project[]) {
-    setProjects(updatedProjects);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProjects));
-  }
-
-  function updateField(field: keyof ProjectFormData, value: string) {
-    setFormData((previousData) => ({
-      ...previousData,
-      [field]: value,
-    }));
-  }
-
-  function handleAddProject(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!formData.name || !formData.client || !formData.revenue) {
-      alert("Please enter project name, client name, and revenue.");
-      return;
-    }
-
-    const newProject: Project = {
-      id: `project-${Date.now()}`,
-      name: formData.name,
-      client: formData.client,
-      location: formData.location || "Not specified",
-      stage: formData.stage,
-      revenue: getNumberValue(formData.revenue),
-      progress: getNumberValue(formData.progress),
-      clientSatisfaction: getNumberValue(formData.clientSatisfaction),
-      delayRisk: formData.delayRisk,
-    };
-
-    const updatedProjects = [newProject, ...projects];
-
-    saveProjects(updatedProjects);
-    setFormData(initialFormData);
-  }
+  const isEditing = editingProjectId !== null;
 
   const totalRevenue = projects.reduce(
     (total, project) => total + project.revenue,
@@ -179,6 +164,112 @@ export default function ProjectsPage() {
     (project) => project.delayRisk === "High"
   ).length;
 
+  function saveProjects(updatedProjects: Project[]) {
+    setProjects(updatedProjects);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProjects));
+  }
+
+  function updateField<K extends keyof ProjectFormData>(
+    field: K,
+    value: ProjectFormData[K]
+  ) {
+    setFormData((previousData) => ({
+      ...previousData,
+      [field]: value,
+    }));
+  }
+
+  function resetForm() {
+    setFormData(initialFormData);
+    setEditingProjectId(null);
+  }
+
+  function handleAddOrUpdateProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!formData.name.trim()) {
+      alert("Please enter project name.");
+      return;
+    }
+
+    if (!formData.client.trim()) {
+      alert("Please enter client name.");
+      return;
+    }
+
+    if (!formData.revenue.trim()) {
+      alert("Please enter revenue amount.");
+      return;
+    }
+
+    const projectData: Project = {
+      id: editingProjectId || `project-${Date.now()}`,
+      name: formData.name,
+      client: formData.client,
+      location: formData.location || "Not specified",
+      stage: formData.stage,
+      revenue: getNumberValue(formData.revenue),
+      progress: getPercentValue(formData.progress),
+      clientSatisfaction: getPercentValue(formData.clientSatisfaction),
+      delayRisk: formData.delayRisk,
+    };
+
+    if (isEditing) {
+      const updatedProjects = projects.map((project) =>
+        project.id === editingProjectId ? projectData : project
+      );
+
+      saveProjects(updatedProjects);
+      resetForm();
+      return;
+    }
+
+    const updatedProjects = [projectData, ...projects];
+
+    saveProjects(updatedProjects);
+    resetForm();
+  }
+
+  function handleEditProject(project: Project) {
+    setEditingProjectId(project.id);
+
+    setFormData({
+      name: project.name,
+      client: project.client,
+      location: project.location,
+      stage: project.stage,
+      revenue: String(project.revenue),
+      progress: String(project.progress),
+      clientSatisfaction: String(project.clientSatisfaction),
+      delayRisk: project.delayRisk,
+    });
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  function handleDeleteProject(projectId: string) {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this project?"
+    );
+
+    if (!confirmDelete) {
+      return;
+    }
+
+    const updatedProjects = projects.filter(
+      (project) => project.id !== projectId
+    );
+
+    saveProjects(updatedProjects);
+
+    if (editingProjectId === projectId) {
+      resetForm();
+    }
+  }
+
   return (
     <>
       {/* Page Header */}
@@ -193,11 +284,21 @@ export default function ProjectsPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-base leading-7 text-slate-300">
-            Add, track, and manage architecture projects. Newly added projects
-            are saved in localStorage and will be used for Analytics in the next
-            step.
+            Add, edit, update, and delete architecture projects. All changes are
+            saved in localStorage and reflected across Dashboard, Analytics,
+            Client Portal, Documents, and Chatbot.
           </p>
         </div>
+
+        {isEditing && (
+          <button
+            type="button"
+            onClick={resetForm}
+            className="rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:border-cyan-400 hover:text-cyan-300"
+          >
+            Cancel Edit
+          </button>
+        )}
       </div>
 
       {/* Summary Cards */}
@@ -243,16 +344,22 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      {/* Add Project Form */}
+      {/* Add / Edit Project Form */}
       <div className="mt-8 rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-        <h2 className="text-2xl font-bold text-white">Add New Project</h2>
+        <h2 className="text-2xl font-bold text-white">
+          {isEditing ? "Edit Project" : "Add New Project"}
+        </h2>
 
         <p className="mt-2 text-sm text-slate-400">
-          Enter project details. After adding, the project will be saved in
-          browser storage.
+          {isEditing
+            ? "Update the selected project details. Other pages will reflect this update automatically."
+            : "Enter project details. After adding, the project will be saved in browser storage."}
         </p>
 
-        <form onSubmit={handleAddProject} className="mt-6 grid gap-5 md:grid-cols-2">
+        <form
+          onSubmit={handleAddOrUpdateProject}
+          className="mt-6 grid gap-5 md:grid-cols-2"
+        >
           <div>
             <label className="mb-2 block text-sm font-semibold text-slate-300">
               Project Name
@@ -344,6 +451,10 @@ export default function ProjectsPage() {
               placeholder="Example: 45"
               className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
             />
+
+            <p className="mt-2 text-xs text-slate-500">
+              Value should be between 0 and 100.
+            </p>
           </div>
 
           <div>
@@ -360,6 +471,10 @@ export default function ProjectsPage() {
               placeholder="Example: 90"
               className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
             />
+
+            <p className="mt-2 text-xs text-slate-500">
+              Value should be between 0 and 100.
+            </p>
           </div>
 
           <div>
@@ -380,13 +495,23 @@ export default function ProjectsPage() {
             </select>
           </div>
 
-          <div className="md:col-span-2">
+          <div className="flex flex-wrap gap-4 md:col-span-2">
             <button
               type="submit"
               className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300"
             >
-              Add Project
+              {isEditing ? "Update Project" : "Add Project"}
             </button>
+
+            {isEditing && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:border-cyan-400 hover:text-cyan-300"
+              >
+                Cancel Edit
+              </button>
+            )}
           </div>
         </form>
       </div>
@@ -397,83 +522,111 @@ export default function ProjectsPage() {
           <h2 className="text-2xl font-bold text-white">All Projects</h2>
 
           <p className="mt-2 text-sm text-slate-400">
-            These projects are saved in localStorage. Analytics will read this
-            same project list in the next step.
+            Edit or delete projects from here. Changes are shared with other
+            pages through localStorage.
           </p>
         </div>
 
-        <div className="grid gap-5">
-          {projects.map((project) => (
-            <div
-              key={project.id}
-              className="rounded-2xl border border-white/10 bg-slate-950/70 p-5 transition hover:border-cyan-400/40"
-            >
-              <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
-                <div>
-                  <h3 className="text-xl font-bold text-white">
-                    {project.name}
-                  </h3>
+        {projects.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-white/15 bg-slate-950/70 p-8 text-center">
+            <p className="text-sm text-slate-400">
+              No projects available. Add a new project above.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-5">
+            {projects.map((project) => (
+              <div
+                key={project.id}
+                className="rounded-2xl border border-white/10 bg-slate-950/70 p-5 transition hover:border-cyan-400/40"
+              >
+                <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
+                  <div>
+                    <h3 className="text-xl font-bold text-white">
+                      {project.name}
+                    </h3>
 
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Client: {project.client} · Location: {project.location}
-                  </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
+                      Client: {project.client} · Location: {project.location}
+                    </p>
 
-                  <p className="mt-1 text-sm leading-6 text-slate-400">
-                    Stage: {project.stage}
-                  </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-400">
+                      Stage: {project.stage}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-300">
+                      {formatCurrency(project.revenue)}
+                    </span>
+
+                    <span
+                      className={`rounded-full border px-4 py-2 text-sm font-semibold ${getRiskStyle(
+                        project.delayRisk
+                      )}`}
+                    >
+                      {project.delayRisk} Risk
+                    </span>
+                  </div>
                 </div>
 
-                <div className="flex flex-wrap gap-3">
-                  <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-300">
-                    {formatCurrency(project.revenue)}
-                  </span>
+                <div className="mt-5 grid gap-5 md:grid-cols-2">
+                  <div>
+                    <div className="mb-2 flex justify-between text-sm">
+                      <span className="text-slate-400">Project Progress</span>
+                      <span className="font-semibold text-cyan-300">
+                        {project.progress}%
+                      </span>
+                    </div>
 
-                  <span
-                    className={`rounded-full border px-4 py-2 text-sm font-semibold ${getRiskStyle(
-                      project.delayRisk
-                    )}`}
+                    <div className="h-2 rounded-full bg-slate-800">
+                      <div
+                        className="h-2 rounded-full bg-cyan-400"
+                        style={{ width: `${project.progress}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-2 flex justify-between text-sm">
+                      <span className="text-slate-400">
+                        Client Satisfaction
+                      </span>
+                      <span className="font-semibold text-green-300">
+                        {project.clientSatisfaction}%
+                      </span>
+                    </div>
+
+                    <div className="h-2 rounded-full bg-slate-800">
+                      <div
+                        className="h-2 rounded-full bg-green-400"
+                        style={{ width: `${project.clientSatisfaction}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleEditProject(project)}
+                    className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/20"
                   >
-                    {project.delayRisk} Risk
-                  </span>
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteProject(project.id)}
+                    className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-400/20"
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
-
-              <div className="mt-5 grid gap-5 md:grid-cols-2">
-                <div>
-                  <div className="mb-2 flex justify-between text-sm">
-                    <span className="text-slate-400">Project Progress</span>
-                    <span className="font-semibold text-cyan-300">
-                      {project.progress}%
-                    </span>
-                  </div>
-
-                  <div className="h-2 rounded-full bg-slate-800">
-                    <div
-                      className="h-2 rounded-full bg-cyan-400"
-                      style={{ width: `${project.progress}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="mb-2 flex justify-between text-sm">
-                    <span className="text-slate-400">Client Satisfaction</span>
-                    <span className="font-semibold text-green-300">
-                      {project.clientSatisfaction}%
-                    </span>
-                  </div>
-
-                  <div className="h-2 rounded-full bg-slate-800">
-                    <div
-                      className="h-2 rounded-full bg-green-400"
-                      style={{ width: `${project.clientSatisfaction}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );

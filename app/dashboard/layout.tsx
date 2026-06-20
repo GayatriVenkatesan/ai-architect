@@ -3,42 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const navItems = [
-  {
-    name: "Dashboard",
-    href: "/dashboard",
-  },
-  {
-    name: "Projects",
-    href: "/dashboard/projects",
-  },
-  {
-    name: "Requirement Analyzer",
-    href: "/dashboard/requirements",
-  },
-  {
-    name: "Interior Design",
-    href: "/dashboard/interior",
-  },
-  {
-    name: "Construction ",
-    href: "/dashboard/construction",
-  },
-  {
-    name: "Analytics",
-    href: "/dashboard/analytics ",
-  },
-  { name: "Clients experience platform", 
-    href: "/dashboard/clients" 
-  },
-  { name: "2D Floor Plan",
-     href: "/dashboard/floor-plan" 
-  },
-  { name: "AI Chatbot", 
-    href: "/dashboard/chatbot" 
-  },
-];
-
 export default function DashboardLayout({
   children,
 }: {
@@ -46,18 +10,34 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
 
+  const navItems = [
+    { name: "Dashboard", href: "/dashboard" },
+    { name: "Projects", href: "/dashboard/projects" },
+    { name: "Clients", href: "/dashboard/clients" },
+    { name: "Requirement Analyzer", href: "/dashboard/requirements" },
+    { name: "2D Floor Plan", href: "/dashboard/floor-plan" },
+    { name: "Interior Design", href: "/dashboard/interior" },
+    { name: "3D Visualization", href: "/dashboard/visualization" },
+    { name: "AR/VR Experience", href: "/dashboard/ar-vr" },
+    { name: "Documents", href: "/dashboard/documents" },
+    { name: "AI Chatbot", href: "/dashboard/chatbot" },
+    { name: "Construction Monitoring", href: "/dashboard/construction" },
+    { name: "Analytics", href: "/dashboard/analytics" },
+    { name: "Settings", href: "/dashboard/settings" },
+  ];
+
   return (
     <main className="min-h-screen bg-slate-950 text-white">
       <div className="flex min-h-screen">
         {/* Sidebar */}
-        <aside className="hidden w-72 border-r border-white/10 bg-slate-900/80 p-6 lg:block">
-          <Link href="/" className="block">
+        <aside className="hidden w-72 shrink-0 border-r border-white/10 bg-slate-900/80 p-6 lg:block">
+          <Link href="/dashboard" className="block">
             <h1 className="text-2xl font-bold tracking-tight text-white">
               ArchiFlow AI
             </h1>
 
-            <p className="mt-1 text-sm text-slate-400">
-              Architecture Workspace
+            <p className="mt-2 text-sm text-slate-400">
+              Architecture OS
             </p>
           </Link>
 
@@ -67,7 +47,7 @@ export default function DashboardLayout({
 
               return (
                 <Link
-                  key={item.name}
+                  key={item.href}
                   href={item.href}
                   className={
                     isActive
@@ -80,37 +60,33 @@ export default function DashboardLayout({
               );
             })}
           </nav>
-
-          <div className="mt-10 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
-            <p className="text-sm font-semibold text-cyan-300">
-              AI System Status
-            </p>
-
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Requirement analysis, budget forecasting, and project insights are
-              ready for workspace automation.
-            </p>
-          </div>
         </aside>
 
-        {/* Mobile Header */}
-        <div className="fixed left-0 right-0 top-0 z-20 border-b border-white/10 bg-slate-950/95 px-5 py-4 backdrop-blur lg:hidden">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="font-bold text-white">
-              ArchiFlow AI
+        {/* Mobile Top Navigation */}
+        <div className="fixed left-0 right-0 top-0 z-40 border-b border-white/10 bg-slate-950/95 p-4 backdrop-blur lg:hidden">
+          <div className="flex items-center justify-between gap-4">
+            <Link href="/dashboard">
+              <h1 className="text-lg font-bold text-white">ArchiFlow AI</h1>
             </Link>
 
-            <Link
-              href="/dashboard"
-              className="rounded-lg bg-cyan-400 px-3 py-2 text-xs font-bold text-slate-950"
+            <select
+              value={pathname}
+              onChange={(event) => {
+                window.location.href = event.target.value;
+              }}
+              className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none"
             >
-              Dashboard
-            </Link>
+              {navItems.map((item) => (
+                <option key={item.href} value={item.href}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
         {/* Page Content */}
-        <section className="flex-1 px-6 pb-8 pt-24 lg:px-10 lg:py-8">
+        <section className="min-w-0 flex-1 px-5 pb-10 pt-24 lg:px-8 lg:pt-8">
           {children}
         </section>
       </div>

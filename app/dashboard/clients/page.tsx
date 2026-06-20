@@ -21,6 +21,14 @@ type Feedback = {
   message: string;
 };
 
+type MilestoneStatus = "Completed" | "In Progress" | "Upcoming";
+
+type Milestone = {
+  title: string;
+  status: MilestoneStatus;
+  description: string;
+};
+
 const STORAGE_KEY = "archiflow-projects";
 const FEEDBACK_KEY = "archiflow-client-feedback";
 
@@ -91,6 +99,18 @@ function getApprovalStyle(status: string) {
   return "border-cyan-400/20 bg-cyan-400/10 text-cyan-300";
 }
 
+function getMilestoneStyle(status: MilestoneStatus) {
+  if (status === "Completed") {
+    return "border-green-400/20 bg-green-400/10 text-green-300";
+  }
+
+  if (status === "In Progress") {
+    return "border-cyan-400/20 bg-cyan-400/10 text-cyan-300";
+  }
+
+  return "border-white/10 bg-slate-950/70 text-slate-300";
+}
+
 function formatCurrency(amount: number) {
   if (amount >= 10000000) {
     return `₹${(amount / 10000000).toFixed(1)}Cr`;
@@ -101,6 +121,119 @@ function formatCurrency(amount: number) {
   }
 
   return `₹${amount.toLocaleString("en-IN")}`;
+}
+
+function generateMilestones(stage: string): Milestone[] {
+  const normalizedStage = stage.toLowerCase();
+
+  const isRequirementStage = normalizedStage.includes("requirement");
+
+  const isDesignStage =
+    normalizedStage.includes("design") ||
+    normalizedStage.includes("interior");
+
+  const isConstructionStage = normalizedStage.includes("construction");
+
+  const isFinalStage =
+    normalizedStage.includes("final") || normalizedStage.includes("completed");
+
+  if (isRequirementStage) {
+    return [
+      {
+        title: "Requirement",
+        status: "In Progress",
+        description: "Client requirements are currently being collected.",
+      },
+      {
+        title: "Design",
+        status: "Upcoming",
+        description: "Design work will start after requirement confirmation.",
+      },
+      {
+        title: "Construction",
+        status: "Upcoming",
+        description: "Construction will start after design approval.",
+      },
+    ];
+  }
+
+  if (isDesignStage) {
+    return [
+      {
+        title: "Requirement",
+        status: "Completed",
+        description: "Client requirements have been collected.",
+      },
+      {
+        title: "Design",
+        status: "In Progress",
+        description: "Design planning or interior design is currently active.",
+      },
+      {
+        title: "Construction",
+        status: "Upcoming",
+        description: "Construction will start after design approval.",
+      },
+    ];
+  }
+
+  if (isConstructionStage) {
+    return [
+      {
+        title: "Requirement",
+        status: "Completed",
+        description: "Client requirements have been finalized.",
+      },
+      {
+        title: "Design",
+        status: "Completed",
+        description: "Design planning has been approved.",
+      },
+      {
+        title: "Construction",
+        status: "In Progress",
+        description: "Construction site work is currently being monitored.",
+      },
+    ];
+  }
+
+  if (isFinalStage) {
+    return [
+      {
+        title: "Requirement",
+        status: "Completed",
+        description: "Client requirements have been finalized.",
+      },
+      {
+        title: "Design",
+        status: "Completed",
+        description: "Design and planning work has been completed.",
+      },
+      {
+        title: "Construction",
+        status: "Completed",
+        description: "Construction and final review are completed or near handover.",
+      },
+    ];
+  }
+
+  return [
+    {
+      title: "Requirement",
+      status: "Completed",
+      description: "Requirement phase is treated as completed for this stage.",
+    },
+    {
+      title: "Design",
+      status: "In Progress",
+      description: "Design workflow is currently active.",
+    },
+    {
+      title: "Construction",
+      status: "Upcoming",
+      description: "Construction will begin after design confirmation.",
+    },
+  ];
 }
 
 export default function ClientsPage() {
@@ -114,7 +247,7 @@ export default function ClientsPage() {
     const storedFeedback = localStorage.getItem(FEEDBACK_KEY);
 
     if (storedProjects) {
-      const parsedProjects = JSON.parse(storedProjects);
+      const parsedProjects: Project[] = JSON.parse(storedProjects);
       setProjects(parsedProjects);
 
       if (parsedProjects.length > 0) {
@@ -133,11 +266,20 @@ export default function ClientsPage() {
   const selectedProject =
     projects.find((project) => project.id === selectedProjectId) || projects[0];
 
+  const projectMilestones = selectedProject
+    ? generateMilestones(selectedProject.stage)
+    : [];
+
   const projectFeedback = savedFeedback.filter(
     (feedback) => feedback.projectId === selectedProject?.id
   );
 
   function handleSaveFeedback() {
+    if (!selectedProject) {
+      alert("Please select a project first.");
+      return;
+    }
+
     if (!feedbackMessage.trim()) {
       alert("Please enter client feedback.");
       return;
@@ -180,8 +322,9 @@ export default function ClientsPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-base leading-7 text-slate-300">
-            Give clients a clear project view with progress status, milestones,
-            approval requests, budget visibility, and feedback tracking.
+            Give clients a clear project view with progress status, dynamic
+            milestones, approval requests, budget visibility, and feedback
+            tracking.
           </p>
         </div>
       </div>
@@ -250,7 +393,7 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      {/* Progress and Milestones */}
+      {/* Progress and Dynamic Milestones */}
       <div className="mt-8 grid gap-6 xl:grid-cols-3">
         <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20 xl:col-span-2">
           <h2 className="text-2xl font-bold text-white">Project Progress</h2>
@@ -276,20 +419,20 @@ export default function ClientsPage() {
           </div>
 
           <div className="mt-8 grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-green-400/20 bg-green-400/10 p-4">
-              <p className="font-semibold text-green-300">Requirement</p>
-              <p className="mt-2 text-sm text-slate-300">Completed</p>
-            </div>
-
-            <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
-              <p className="font-semibold text-cyan-300">Design</p>
-              <p className="mt-2 text-sm text-slate-300">In Progress</p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-              <p className="font-semibold text-slate-300">Construction</p>
-              <p className="mt-2 text-sm text-slate-400">Upcoming</p>
-            </div>
+            {projectMilestones.map((milestone) => (
+              <div
+                key={milestone.title}
+                className={`rounded-2xl border p-4 ${getMilestoneStyle(
+                  milestone.status
+                )}`}
+              >
+                <p className="font-semibold">{milestone.title}</p>
+                <p className="mt-2 text-sm font-bold">{milestone.status}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  {milestone.description}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
 
