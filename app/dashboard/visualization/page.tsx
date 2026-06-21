@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
 type DelayRisk = "Low" | "Medium" | "High";
@@ -15,6 +16,18 @@ type Project = {
   clientSatisfaction: number;
   delayRisk: DelayRisk;
 };
+
+const ThreeBuildingViewer = dynamic(
+  () => import("../../components/ThreeBuildingViewer"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-[430px] items-center justify-center rounded-3xl border border-white/10 bg-slate-950 text-slate-400">
+        Loading 3D viewer...
+      </div>
+    ),
+  }
+);
 
 const STORAGE_KEY = "archiflow-projects";
 
@@ -174,9 +187,9 @@ export default function VisualizationPage() {
 
         <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-5 py-4">
           <p className="text-sm font-semibold text-cyan-300">
-            Future Integration
+            Three.js Active
           </p>
-          <p className="mt-1 text-sm text-slate-300">Three.js Viewer</p>
+          <p className="mt-1 text-sm text-slate-300">Interactive 3D Viewer</p>
         </div>
       </div>
 
@@ -201,16 +214,16 @@ export default function VisualizationPage() {
 
       {/* Main Viewer Section */}
       <div className="mt-8 grid gap-6 xl:grid-cols-3">
-        {/* 3D Viewer Placeholder */}
+        {/* Real Three.js Viewer */}
         <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20 xl:col-span-2">
           <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-start">
             <div>
               <h2 className="text-2xl font-bold text-white">
-                Model Preview Area
+                Interactive 3D Model Viewer
               </h2>
 
               <p className="mt-2 text-sm text-slate-400">
-                This area will later display the real 3D model using Three.js.
+                Rotate, zoom, and inspect a frontend Three.js building model.
               </p>
             </div>
 
@@ -223,52 +236,25 @@ export default function VisualizationPage() {
             </span>
           </div>
 
-          <div className="relative flex min-h-[420px] items-center justify-center overflow-hidden rounded-3xl border border-cyan-400/20 bg-slate-950">
-            <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(34,211,238,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(34,211,238,0.08)_1px,transparent_1px)] bg-[size:36px_36px]" />
-
-            <div className="relative z-10 flex flex-col items-center">
-              <div className="relative h-52 w-72 rotate-[-6deg] rounded-3xl border border-cyan-300/40 bg-cyan-400/10 shadow-2xl shadow-cyan-500/10">
-                <div className="absolute left-8 top-8 h-16 w-20 rounded-xl border border-white/20 bg-white/10" />
-                <div className="absolute right-8 top-8 h-16 w-20 rounded-xl border border-white/20 bg-white/10" />
-                <div className="absolute bottom-8 left-8 h-16 w-20 rounded-xl border border-white/20 bg-white/10" />
-                <div className="absolute bottom-8 right-8 h-16 w-20 rounded-xl border border-white/20 bg-white/10" />
-
-                <div className="absolute -right-12 top-10 h-44 w-16 skew-y-12 rounded-r-2xl border border-cyan-300/30 bg-cyan-300/10" />
-                <div className="absolute -top-12 left-10 h-16 w-64 skew-x-12 rounded-t-2xl border border-cyan-300/30 bg-cyan-300/10" />
-              </div>
-
-              <p className="mt-10 text-center text-lg font-bold text-white">
-                3D Model Placeholder
-              </p>
-
-              <p className="mt-2 max-w-md text-center text-sm leading-6 text-slate-400">
-                Real 3D file rendering will be added later using Three.js,
-                GLTF/GLB model loading, camera controls, and material previews.
-              </p>
-            </div>
+          <div className="rounded-3xl border border-cyan-400/20 bg-slate-950 p-2">
+            <ThreeBuildingViewer
+  projectName={selectedProject.name}
+  projectStage={selectedProject.stage}
+/>
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <button
-              type="button"
-              className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/20"
-            >
-              Rotate Model
-            </button>
+            <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-center text-sm font-semibold text-cyan-300">
+              Drag to Rotate
+            </div>
 
-            <button
-              type="button"
-              className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:border-cyan-400 hover:text-cyan-300"
-            >
-              Toggle Layers
-            </button>
+            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-semibold text-white">
+              Scroll to Zoom
+            </div>
 
-            <button
-              type="button"
-              className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:border-cyan-400 hover:text-cyan-300"
-            >
-              Client Preview
-            </button>
+            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-semibold text-white">
+              Right Drag to Pan
+            </div>
           </div>
         </div>
 
@@ -394,10 +380,10 @@ export default function VisualizationPage() {
         </h2>
 
         <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-300">
-          This page is currently a frontend placeholder. Later, this module can
-          be upgraded with Three.js, GLTF/GLB model upload, OrbitControls,
-          material switching, room annotations, client comments, and AI-powered
-          design issue detection.
+          This page now includes a frontend Three.js demo viewer. Later, this
+          module can be upgraded with GLTF/GLB model upload, real architecture
+          file loading, material switching, room annotations, client comments,
+          and AI-powered design issue detection.
         </p>
 
         <div className="mt-6 grid gap-4 md:grid-cols-4">
@@ -407,18 +393,22 @@ export default function VisualizationPage() {
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-            <p className="font-bold text-cyan-300">GLB / GLTF</p>
-            <p className="mt-2 text-sm text-slate-400">3D model file support</p>
+            <p className="font-bold text-cyan-300">React Three Fiber</p>
+            <p className="mt-2 text-sm text-slate-400">
+              React wrapper for 3D scenes
+            </p>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-            <p className="font-bold text-cyan-300">OrbitControls</p>
+            <p className="font-bold text-cyan-300">Orbit Controls</p>
             <p className="mt-2 text-sm text-slate-400">Rotate, zoom, pan</p>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-            <p className="font-bold text-cyan-300">AI Review</p>
-            <p className="mt-2 text-sm text-slate-400">Design issue analysis</p>
+            <p className="font-bold text-cyan-300">Future Backend</p>
+            <p className="mt-2 text-sm text-slate-400">
+              Upload and store 3D files
+            </p>
           </div>
         </div>
       </div>
