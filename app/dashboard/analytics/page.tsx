@@ -1,495 +1,427 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getAnalyticsSummary, getProjects } from "../../lib/api";
 
-type DelayRisk = "Low" | "Medium" | "High";
+type AnalyticsSummary = {
+  total_projects: number;
+  total_budget: number;
+  average_progress: number;
+  high_risk_projects: number;
+};
 
 type Project = {
-  id: string;
-  name: string;
-  client: string;
+  id: number;
+  project_name: string;
+  client_name: string;
   location: string;
-  stage: string;
-  revenue: number;
-  progress: number;
-  clientSatisfaction: number;
-  delayRisk: DelayRisk;
+  project_type?: string | null;
+  status?: string | null;
+  budget?: number | null;
+  progress?: number | null;
+  risk_level?: string | null;
+  created_at?: string | null;
 };
 
-type AiUsage = {
-  feature: string;
-  usageCount: number;
-  impact: string;
+type ProjectsResponse = {
+  total?: number;
+  projects?: Project[];
+  data?: Project[];
 };
-
-const STORAGE_KEY = "archiflow-projects";
-
-const defaultProjects: Project[] = [
-  {
-    id: "project-1",
-    name: "Luxury Villa Design",
-    client: "Rohan Sharma",
-    location: "Chennai",
-    stage: "Design Planning",
-    revenue: 8500000,
-    progress: 42,
-    clientSatisfaction: 88,
-    delayRisk: "Medium",
-  },
-  {
-    id: "project-2",
-    name: "Apartment Interior Plan",
-    client: "Meera Homes",
-    location: "Bengaluru",
-    stage: "Interior Design",
-    revenue: 1800000,
-    progress: 68,
-    clientSatisfaction: 94,
-    delayRisk: "Low",
-  },
-  {
-    id: "project-3",
-    name: "Commercial Workspace",
-    client: "Nova Tech Park",
-    location: "Hyderabad",
-    stage: "Construction Monitoring",
-    revenue: 12000000,
-    progress: 74,
-    clientSatisfaction: 91,
-    delayRisk: "Low",
-  },
-];
-
-const aiUsage: AiUsage[] = [
-  {
-    feature: "Requirement Analyzer",
-    usageCount: 34,
-    impact: "Reduced manual requirement documentation time",
-  },
-  {
-    feature: "Interior Design Automation",
-    usageCount: 21,
-    impact: "Generated faster room-wise design concepts",
-  },
-  {
-    feature: "Construction Monitoring",
-    usageCount: 18,
-    impact: "Improved delay tracking and weekly reports",
-  },
-  {
-    feature: "Budget Forecasting",
-    usageCount: 27,
-    impact: "Helped identify early cost risks",
-  },
-];
-
-function formatCurrency(amount: number) {
-  if (amount >= 10000000) {
-    return `₹${(amount / 10000000).toFixed(1)}Cr`;
-  }
-
-  if (amount >= 100000) {
-    return `₹${(amount / 100000).toFixed(1)}L`;
-  }
-
-  return `₹${amount.toLocaleString("en-IN")}`;
-}
-
-function getRiskStyle(risk: DelayRisk) {
-  if (risk === "Low") {
-    return "border-green-400/20 bg-green-400/10 text-green-300";
-  }
-
-  if (risk === "Medium") {
-    return "border-orange-400/20 bg-orange-400/10 text-orange-300";
-  }
-
-  return "border-red-400/20 bg-red-400/10 text-red-300";
-}
-
-function getAverage(projects: Project[], key: "progress" | "clientSatisfaction") {
-  if (projects.length === 0) {
-    return 0;
-  }
-
-  const total = projects.reduce((sum, project) => sum + project[key], 0);
-
-  return Math.round(total / projects.length);
-}
-
-function getStageRevenue(projects: Project[]) {
-  const revenueMap: Record<string, number> = {};
-
-  projects.forEach((project) => {
-    if (!revenueMap[project.stage]) {
-      revenueMap[project.stage] = 0;
-    }
-
-    revenueMap[project.stage] += project.revenue;
-  });
-
-  return Object.entries(revenueMap).map(([stage, revenue]) => ({
-    stage,
-    revenue,
-  }));
-}
 
 export default function AnalyticsPage() {
-  const [projects, setProjects] = useState<Project[]>(defaultProjects);
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  function normalizeProjects(response: ProjectsResponse | Project[]) {
+    if (Array.isArray(response)) {
+      return response;
+    }
+
+    return response.projects || response.data || [];
+  }
+
+  function calculateSummary(projectList: Project[]): AnalyticsSummary {
+    const totalProjects = projectList.length;
+
+    const totalBudget = projectList.reduce((total, project) => {
+      return total + Number(project.budget || 0);
+    }, 0);
+
+    const totalProgress = projectList.reduce((total, project) => {
+      return total + Number(project.progress || 0);
+    }, 0);
+
+    const averageProgress =
+      totalProjects > 0 ? totalProgress / totalProjects : 0;
+
+    const highRiskProjects = projectList.filter(
+      (project) => project.risk_level?.toLowerCase() === "high"
+    ).length;
+
+    return {
+      total_projects: totalProjects,
+      total_budget: totalBudget,
+      average_progress: averageProgress,
+      high_risk_projects: highRiskProjects,
+    };
+  }
+
+  async function loadAnalyticsData() {
+    try {
+      setLoading(true);
+      setError("");
+
+      const projectsResponse = (await getProjects()) as
+        | ProjectsResponse
+        | Project[];
+
+      const projectList = normalizeProjects(projectsResponse);
+
+      setProjects(projectList);
+
+      try {
+        const analyticsResponse =
+          (await getAnalyticsSummary()) as AnalyticsSummary;
+
+        setSummary(analyticsResponse);
+      } catch (analyticsError) {
+        console.error(analyticsError);
+        setSummary(calculateSummary(projectList));
+      }
+    } catch (projectError) {
+      console.error(projectError);
+      setError(
+        "Unable to load analytics. Please check whether backend /projects API is working."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    const storedProjects = localStorage.getItem(STORAGE_KEY);
-
-    if (storedProjects) {
-      setProjects(JSON.parse(storedProjects));
-    } else {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultProjects));
-    }
+    loadAnalyticsData();
   }, []);
 
-  const totalProjects = projects.length;
-
-  const activeProjects = projects.filter(
-    (project) => project.stage !== "Completed"
+  const planningProjects = projects.filter(
+    (project) => project.status?.toLowerCase() === "planning"
   ).length;
 
-  const totalRevenue = projects.reduce(
-    (total, project) => total + project.revenue,
-    0
-  );
+  const activeProjects = projects.filter((project) => {
+    const status = project.status?.toLowerCase();
 
-  const averageProgress = getAverage(projects, "progress");
+    return status === "active" || status === "in progress";
+  }).length;
 
-  const averageSatisfaction = getAverage(projects, "clientSatisfaction");
-
-  const lowRiskProjects = projects.filter(
-    (project) => project.delayRisk === "Low"
-  ).length;
-
-  const mediumRiskProjects = projects.filter(
-    (project) => project.delayRisk === "Medium"
+  const completedProjects = projects.filter(
+    (project) => project.status?.toLowerCase() === "completed"
   ).length;
 
   const highRiskProjects = projects.filter(
-    (project) => project.delayRisk === "High"
-  ).length;
+    (project) => project.risk_level?.toLowerCase() === "high"
+  );
 
-  const stageRevenue = getStageRevenue(projects);
+  function formatCurrency(value: number) {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(value);
+  }
 
-  const highestStageRevenue =
-    stageRevenue.length > 0
-      ? Math.max(...stageRevenue.map((item) => item.revenue))
-      : 1;
+  function getRiskStyle(riskLevel?: string | null) {
+    const risk = riskLevel?.toLowerCase();
+
+    if (risk === "high") {
+      return "border-red-500/30 bg-red-500/10 text-red-300";
+    }
+
+    if (risk === "medium") {
+      return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+    }
+
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+  }
+
+  function getProgressColor(progress?: number | null) {
+    const value = progress || 0;
+
+    if (value >= 75) {
+      return "bg-emerald-400";
+    }
+
+    if (value >= 40) {
+      return "bg-cyan-400";
+    }
+
+    return "bg-amber-400";
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-slate-950 px-6 py-8 text-slate-100">
+        <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8 text-center text-slate-400">
+          Loading analytics...
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <>
-      {/* Page Header */}
-      <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-start">
-        <div>
-          <p className="text-sm font-bold uppercase tracking-[0.35em] text-cyan-300">
-            Analytics
-          </p>
-
-          <h1 className="mt-4 text-4xl font-bold tracking-tight text-white">
-            Business Intelligence Dashboard
-          </h1>
-
-          <p className="mt-3 max-w-3xl text-base leading-7 text-slate-300">
-            Track project performance, revenue, budget health, delay risk,
-            client satisfaction, and AI usage from one executive dashboard. This
-            page now reads project data from localStorage.
-          </p>
-        </div>
-
-        <button className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300">
-          Export Report
-        </button>
-      </div>
-
-      {/* Metrics */}
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <p className="text-sm text-slate-400">Total Projects</p>
-
-          <h2 className="mt-3 text-4xl font-bold text-white">
-            {totalProjects}
-          </h2>
-
-          <p className="mt-2 text-sm leading-6 text-slate-400">
-            Projects saved from Projects page
-          </p>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <p className="text-sm text-slate-400">Active Projects</p>
-
-          <h2 className="mt-3 text-4xl font-bold text-white">
-            {activeProjects}
-          </h2>
-
-          <p className="mt-2 text-sm leading-6 text-slate-400">
-            Projects not marked completed
-          </p>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <p className="text-sm text-slate-400">Projected Revenue</p>
-
-          <h2 className="mt-3 text-4xl font-bold text-white">
-            {formatCurrency(totalRevenue)}
-          </h2>
-
-          <p className="mt-2 text-sm leading-6 text-slate-400">
-            Total revenue from all projects
-          </p>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <p className="text-sm text-slate-400">Client Satisfaction</p>
-
-          <h2 className="mt-3 text-4xl font-bold text-white">
-            {averageSatisfaction}%
-          </h2>
-
-          <p className="mt-2 text-sm leading-6 text-slate-400">
-            Average feedback score
-          </p>
-        </div>
-      </div>
-
-      {/* Progress and Budget Health */}
-      <div className="mt-8 grid gap-6 xl:grid-cols-3">
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20 xl:col-span-2">
-          <h2 className="text-2xl font-bold text-white">
-            Revenue by Project Stage
-          </h2>
-
-          <p className="mt-2 text-sm text-slate-400">
-            This section is calculated from the projects saved in localStorage.
-          </p>
-
-          <div className="mt-6 space-y-5">
-            {stageRevenue.map((item) => {
-              const width = Math.round(
-                (item.revenue / highestStageRevenue) * 100
-              );
-
-              return (
-                <div key={item.stage}>
-                  <div className="mb-2 flex justify-between text-sm">
-                    <span className="text-slate-400">{item.stage}</span>
-                    <span className="font-semibold text-cyan-300">
-                      {formatCurrency(item.revenue)}
-                    </span>
-                  </div>
-
-                  <div className="h-3 rounded-full bg-slate-800">
-                    <div
-                      className="h-3 rounded-full bg-cyan-400"
-                      style={{ width: `${width}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <h2 className="text-2xl font-bold text-white">Risk Health</h2>
-
-          <p className="mt-2 text-sm text-slate-400">
-            Delay risk summary from all projects.
-          </p>
-
-          <div className="mt-6 space-y-4">
-            <div className="rounded-2xl border border-green-400/20 bg-green-400/10 p-4">
-              <p className="text-sm font-semibold text-green-300">
-                Low Risk
+    <main className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
+        <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/20">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.25em] text-cyan-400">
+                Business Intelligence
               </p>
-              <p className="mt-1 text-3xl font-bold text-white">
-                {lowRiskProjects}
+
+              <h1 className="mt-3 text-3xl font-bold tracking-tight text-white">
+                Analytics Dashboard
+              </h1>
+
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
+                Track project performance, budget allocation, construction
+                progress, and risk levels across the ArchiFlow AI workspace.
               </p>
             </div>
 
-            <div className="rounded-2xl border border-orange-400/20 bg-orange-400/10 p-4">
-              <p className="text-sm font-semibold text-orange-300">
-                Medium Risk
-              </p>
-              <p className="mt-1 text-3xl font-bold text-white">
-                {mediumRiskProjects}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-red-400/20 bg-red-400/10 p-4">
-              <p className="text-sm font-semibold text-red-300">
-                High Risk
-              </p>
-              <p className="mt-1 text-3xl font-bold text-white">
-                {highRiskProjects}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Overall Progress */}
-      <div className="mt-8 rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-white">
-            Overall Project Progress
-          </h2>
-
-          <p className="mt-2 text-sm text-slate-400">
-            Average progress calculated from all saved projects.
-          </p>
-        </div>
-
-        <div>
-          <div className="mb-2 flex justify-between text-sm">
-            <span className="text-slate-400">Average Completion</span>
-            <span className="font-semibold text-cyan-300">
-              {averageProgress}%
-            </span>
-          </div>
-
-          <div className="h-4 rounded-full bg-slate-800">
-            <div
-              className="h-4 rounded-full bg-cyan-400"
-              style={{ width: `${averageProgress}%` }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Project Performance */}
-      <div className="mt-8 rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-white">
-            Project Performance
-          </h2>
-
-          <p className="mt-2 text-sm text-slate-400">
-            Every project added in the Projects page will appear here.
-          </p>
-        </div>
-
-        <div className="grid gap-5">
-          {projects.map((project) => (
-            <div
-              key={project.id}
-              className="rounded-2xl border border-white/10 bg-slate-950/70 p-5 transition hover:border-cyan-400/40"
+            <button
+              onClick={loadAnalyticsData}
+              className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-5 py-3 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-500/20"
             >
-              <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
-                <div>
-                  <h3 className="text-xl font-bold text-white">
-                    {project.name}
-                  </h3>
+              Refresh Analytics
+            </button>
+          </div>
+        </section>
 
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Client: {project.client} · Location: {project.location}
-                  </p>
+        {error && (
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm text-red-200">
+            {error}
+          </div>
+        )}
 
-                  <p className="mt-1 text-sm leading-6 text-slate-400">
-                    Stage: {project.stage} · Revenue:{" "}
-                    {formatCurrency(project.revenue)}
-                  </p>
+        <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+            <p className="text-sm text-slate-400">Total Projects</p>
+            <h2 className="mt-3 text-3xl font-bold text-white">
+              {summary?.total_projects ?? projects.length}
+            </h2>
+            <p className="mt-3 text-xs text-slate-500">
+              Projects stored in backend
+            </p>
+          </div>
+
+          <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+            <p className="text-sm text-slate-400">Total Budget</p>
+            <h2 className="mt-3 text-3xl font-bold text-white">
+              {formatCurrency(summary?.total_budget ?? 0)}
+            </h2>
+            <p className="mt-3 text-xs text-slate-500">
+              Combined project value
+            </p>
+          </div>
+
+          <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+            <p className="text-sm text-slate-400">Average Progress</p>
+            <h2 className="mt-3 text-3xl font-bold text-white">
+              {Math.round(summary?.average_progress ?? 0)}%
+            </h2>
+            <p className="mt-3 text-xs text-slate-500">
+              Overall completion average
+            </p>
+          </div>
+
+          <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+            <p className="text-sm text-slate-400">High Risk Projects</p>
+            <h2 className="mt-3 text-3xl font-bold text-white">
+              {summary?.high_risk_projects ?? highRiskProjects.length}
+            </h2>
+            <p className="mt-3 text-xs text-slate-500">
+              Needs immediate attention
+            </p>
+          </div>
+        </section>
+
+        <section className="grid gap-8 xl:grid-cols-[1fr_420px]">
+          <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold text-white">
+                Project Progress Overview
+              </h2>
+
+              <p className="mt-2 text-sm text-slate-400">
+                Live project progress data loaded from FastAPI backend.
+              </p>
+            </div>
+
+            {projects.length === 0 ? (
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-8 text-center">
+                <h3 className="text-lg font-semibold text-white">
+                  No projects found
+                </h3>
+
+                <p className="mt-2 text-sm text-slate-400">
+                  Add projects first to view analytics.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {projects.map((project) => {
+                  const progress = project.progress || 0;
+
+                  return (
+                    <article
+                      key={project.id}
+                      className="rounded-2xl border border-slate-800 bg-slate-950 p-5"
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold text-white">
+                            {project.project_name}
+                          </h3>
+
+                          <p className="mt-1 text-sm text-slate-400">
+                            {project.client_name} • {project.location}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${getRiskStyle(
+                            project.risk_level
+                          )}`}
+                        >
+                          {project.risk_level || "Low"} Risk
+                        </span>
+                      </div>
+
+                      <div className="mt-5">
+                        <div className="mb-2 flex items-center justify-between text-sm">
+                          <span className="text-slate-400">Progress</span>
+                          <span className="font-semibold text-white">
+                            {progress}%
+                          </span>
+                        </div>
+
+                        <div className="h-3 overflow-hidden rounded-full bg-slate-800">
+                          <div
+                            className={`h-full rounded-full ${getProgressColor(
+                              progress
+                            )}`}
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid gap-4 md:grid-cols-3">
+                        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                            Type
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-white">
+                            {project.project_type || "Architecture"}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                            Status
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-white">
+                            {project.status || "Planning"}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                            Budget
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-white">
+                            {formatCurrency(project.budget || 0)}
+                          </p>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <aside className="space-y-8">
+            <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+              <h2 className="text-xl font-semibold text-white">
+                Status Summary
+              </h2>
+
+              <p className="mt-2 text-sm text-slate-400">
+                Project distribution by current status.
+              </p>
+
+              <div className="mt-6 space-y-4">
+                <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                  <span className="text-sm text-slate-300">Planning</span>
+                  <span className="text-lg font-bold text-white">
+                    {planningProjects}
+                  </span>
                 </div>
 
-                <div className="flex flex-wrap gap-3">
-                  <span
-                    className={`rounded-full border px-4 py-2 text-sm font-semibold ${getRiskStyle(
-                      project.delayRisk
-                    )}`}
-                  >
-                    {project.delayRisk} Delay Risk
+                <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                  <span className="text-sm text-slate-300">Active</span>
+                  <span className="text-lg font-bold text-white">
+                    {activeProjects}
                   </span>
+                </div>
 
-                  <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-300">
-                    {project.progress}% Complete
+                <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                  <span className="text-sm text-slate-300">Completed</span>
+                  <span className="text-lg font-bold text-white">
+                    {completedProjects}
                   </span>
                 </div>
               </div>
+            </div>
 
-              <div className="mt-5 grid gap-5 md:grid-cols-2">
-                <div>
-                  <div className="mb-2 flex justify-between text-sm">
-                    <span className="text-slate-400">Project Progress</span>
-                    <span className="font-semibold text-cyan-300">
-                      {project.progress}%
-                    </span>
+            <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+              <h2 className="text-xl font-semibold text-white">
+                Risk Intelligence
+              </h2>
+
+              <p className="mt-2 text-sm text-slate-400">
+                High-risk projects that need closer review.
+              </p>
+
+              <div className="mt-6 space-y-4">
+                {highRiskProjects.length === 0 ? (
+                  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+                    No high-risk projects found. Current project risk looks
+                    manageable.
                   </div>
-
-                  <div className="h-2 rounded-full bg-slate-800">
+                ) : (
+                  highRiskProjects.map((project) => (
                     <div
-                      className="h-2 rounded-full bg-cyan-400"
-                      style={{ width: `${project.progress}%` }}
-                    />
-                  </div>
-                </div>
+                      key={project.id}
+                      className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4"
+                    >
+                      <h3 className="text-sm font-semibold text-red-200">
+                        {project.project_name}
+                      </h3>
 
-                <div>
-                  <div className="mb-2 flex justify-between text-sm">
-                    <span className="text-slate-400">Client Satisfaction</span>
-                    <span className="font-semibold text-green-300">
-                      {project.clientSatisfaction}%
-                    </span>
-                  </div>
-
-                  <div className="h-2 rounded-full bg-slate-800">
-                    <div
-                      className="h-2 rounded-full bg-green-400"
-                      style={{ width: `${project.clientSatisfaction}%` }}
-                    />
-                  </div>
-                </div>
+                      <p className="mt-2 text-xs leading-5 text-red-100/70">
+                        Review budget, schedule, approvals, and site progress
+                        for this project.
+                      </p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
-          ))}
-        </div>
+          </aside>
+        </section>
       </div>
-
-      {/* AI Usage */}
-      <div className="mt-8 rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-white">
-            AI Usage Analytics
-          </h2>
-
-          <p className="mt-2 text-sm text-slate-400">
-            This section is still demo data. Later, it can be connected to real
-            AI usage logs.
-          </p>
-        </div>
-
-        <div className="grid gap-5 md:grid-cols-2">
-          {aiUsage.map((item) => (
-            <div
-              key={item.feature}
-              className="rounded-2xl border border-white/10 bg-slate-950/70 p-5 transition hover:border-cyan-400/40"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-bold text-cyan-300">
-                    {item.feature}
-                  </h3>
-
-                  <p className="mt-3 text-sm leading-6 text-slate-300">
-                    {item.impact}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-center">
-                  <p className="text-2xl font-bold text-white">
-                    {item.usageCount}
-                  </p>
-                  <p className="text-xs text-cyan-300">uses</p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </>
+    </main>
   );
 }

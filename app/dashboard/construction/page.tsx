@@ -1,36 +1,62 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import {
+  createConstructionUpdate,
+  deleteConstructionUpdate,
+  getConstructionUpdates,
+  updateConstructionUpdate,
+} from "../../lib/api";
+
+type IssueSeverity = "Low" | "Medium" | "High";
 
 type ConstructionFormData = {
   projectName: string;
-  location: string;
-  stage: string;
-  plannedProgress: string;
-  actualProgress: string;
-  delayReason: string;
-  safetyNotes: string;
-  uploadedFileName: string;
+  siteLocation: string;
+  workStage: string;
+  progressPercent: string;
+  materialStatus: string;
+  safetyStatus: string;
+  issueSeverity: IssueSeverity;
+  issueNotes: string;
+  inspectorName: string;
 };
 
-type SiteReport = {
-  title: string;
-  description: string;
+type ConstructionUpdate = {
+  id: number;
+  project_name: string;
+  site_location: string;
+  work_stage: string;
+  progress_percent: number;
+  material_status: string;
+  safety_status: string;
+  issue_severity: IssueSeverity;
+  issue_notes: string | null;
+  inspector_name: string;
+  ai_risk_summary: string | null;
+  created_at: string;
+};
+
+type ConstructionUpdatesResponse = {
+  total: number;
+  updates: ConstructionUpdate[];
 };
 
 const initialFormData: ConstructionFormData = {
   projectName: "",
-  location: "",
-  stage: "Foundation Work",
-  plannedProgress: "",
-  actualProgress: "",
-  delayReason: "",
-  safetyNotes: "",
-  uploadedFileName: "",
+  siteLocation: "",
+  workStage: "Foundation",
+  progressPercent: "",
+  materialStatus: "Available",
+  safetyStatus: "Safe",
+  issueSeverity: "Low",
+  issueNotes: "",
+  inspectorName: "",
 };
 
-function getProgressNumber(value: string) {
-  const numberValue = Number(value);
+function getProgressValue(value: string | number | null | undefined) {
+  const numberValue = Number(value ?? 0);
 
   if (Number.isNaN(numberValue)) {
     return 0;
@@ -47,23 +73,7 @@ function getProgressNumber(value: string) {
   return numberValue;
 }
 
-function calculateDelayRisk(planned: string, actual: string) {
-  const plannedProgress = getProgressNumber(planned);
-  const actualProgress = getProgressNumber(actual);
-  const gap = plannedProgress - actualProgress;
-
-  if (gap >= 20) {
-    return "High";
-  }
-
-  if (gap >= 10) {
-    return "Medium";
-  }
-
-  return "Low";
-}
-
-function getRiskStyle(risk: string) {
+function getRiskStyle(risk: IssueSeverity) {
   if (risk === "Low") {
     return "border-green-400/20 bg-green-400/10 text-green-300";
   }
@@ -75,56 +85,54 @@ function getRiskStyle(risk: string) {
   return "border-red-400/20 bg-red-400/10 text-red-300";
 }
 
-function generateSiteReports(formData: ConstructionFormData): SiteReport[] {
-  const planned = getProgressNumber(formData.plannedProgress);
-  const actual = getProgressNumber(formData.actualProgress);
-  const gap = planned - actual;
-  const risk = calculateDelayRisk(formData.plannedProgress, formData.actualProgress);
+function getSafetyStyle(status: string) {
+  const lowerStatus = status.toLowerCase();
 
-  return [
-    {
-      title: "Progress Summary",
-      description: `${formData.projectName || "The project"} is currently in the ${
-        formData.stage
-      } stage. Planned progress is ${planned}%, while actual site progress is ${actual}%.`,
-    },
-    {
-      title: "Delay Prediction",
-      description:
-        gap > 0
-          ? `The project is behind schedule by ${gap}%. Current delay risk is ${risk}. The team should review workforce availability, material supply, and approval timelines.`
-          : `The project is on track or ahead of schedule. Current delay risk is ${risk}.`,
-    },
-    {
-      title: "Site Observation",
-      description:
-        formData.delayReason.trim().length > 0
-          ? formData.delayReason
-          : "No major delay reason has been entered yet.",
-    },
-    {
-      title: "Safety Review",
-      description:
-        formData.safetyNotes.trim().length > 0
-          ? formData.safetyNotes
-          : "No safety notes have been entered yet. Site supervisor should add safety observations regularly.",
-    },
-  ];
+  if (lowerStatus.includes("unsafe") || lowerStatus.includes("risk")) {
+    return "border-red-400/20 bg-red-400/10 text-red-300";
+  }
+
+  if (lowerStatus.includes("review") || lowerStatus.includes("monitor")) {
+    return "border-orange-400/20 bg-orange-400/10 text-orange-300";
+  }
+
+  return "border-green-400/20 bg-green-400/10 text-green-300";
 }
 
 export default function ConstructionPage() {
   const [formData, setFormData] =
     useState<ConstructionFormData>(initialFormData);
-  const [isAnalyzed, setIsAnalyzed] = useState(false);
-
-  const plannedProgress = getProgressNumber(formData.plannedProgress);
-  const actualProgress = getProgressNumber(formData.actualProgress);
-  const delayGap = plannedProgress - actualProgress;
-  const delayRisk = calculateDelayRisk(
-    formData.plannedProgress,
-    formData.actualProgress
+  const [updates, setUpdates] = useState<ConstructionUpdate[]>([]);
+  const [latestUpdate, setLatestUpdate] = useState<ConstructionUpdate | null>(
+    null
   );
-  const siteReports = generateSiteReports(formData);
+  const [editingUpdateId, setEditingUpdateId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const isEditing = editingUpdateId !== null;
+
+  async function loadConstructionUpdates() {
+    try {
+      setLoading(true);
+      setError("");
+
+      const data =
+        (await getConstructionUpdates()) as ConstructionUpdatesResponse;
+
+      setUpdates(data.updates || []);
+    } catch {
+      setError("Unable to load construction updates from backend.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadConstructionUpdates();
+  }, []);
 
   function updateField(field: keyof ConstructionFormData, value: string) {
     setFormData((previousData) => ({
@@ -132,16 +140,142 @@ export default function ConstructionPage() {
       [field]: value,
     }));
 
-    setIsAnalyzed(false);
+    setSuccessMessage("");
   }
 
-  function handleAnalyzeSiteProgress() {
-    setIsAnalyzed(true);
+  function resetForm() {
+    setFormData(initialFormData);
+    setEditingUpdateId(null);
+    setLatestUpdate(null);
+    setError("");
+    setSuccessMessage("");
+  }
+
+  function clearFormAfterSave() {
+    setFormData(initialFormData);
+    setEditingUpdateId(null);
+  }
+
+  function buildConstructionPayload() {
+    return {
+      project_name: formData.projectName.trim() || "Untitled Project",
+      site_location: formData.siteLocation.trim() || "Not specified",
+      work_stage: formData.workStage,
+      progress_percent: getProgressValue(formData.progressPercent),
+      material_status: formData.materialStatus,
+      safety_status: formData.safetyStatus,
+      issue_severity: formData.issueSeverity,
+      issue_notes:
+        formData.issueNotes.trim() || "No major site issue mentioned.",
+      inspector_name: formData.inspectorName.trim() || "Site Engineer",
+    };
+  }
+
+  async function handleSaveConstructionUpdate(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (!formData.projectName.trim()) {
+      alert("Please enter project name.");
+      return;
+    }
+
+    if (!formData.progressPercent.trim()) {
+      alert("Please enter progress percentage.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+      setSuccessMessage("");
+
+      const payload = buildConstructionPayload();
+
+      if (isEditing && editingUpdateId !== null) {
+        const updatedData = (await updateConstructionUpdate(
+          editingUpdateId,
+          payload
+        )) as ConstructionUpdate;
+
+        setLatestUpdate(updatedData);
+        setSuccessMessage("Construction update edited successfully.");
+      } else {
+        const createdData = (await createConstructionUpdate(
+          payload
+        )) as ConstructionUpdate;
+
+        setLatestUpdate(createdData);
+        setSuccessMessage("Construction update saved successfully.");
+      }
+
+      clearFormAfterSave();
+      await loadConstructionUpdates();
+    } catch {
+      setError("Unable to save construction update. Check backend is running.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleEditUpdate(update: ConstructionUpdate) {
+    setEditingUpdateId(update.id);
+    setLatestUpdate(update);
+    setError("");
+    setSuccessMessage("");
+
+    setFormData({
+      projectName: update.project_name,
+      siteLocation: update.site_location,
+      workStage: update.work_stage,
+      progressPercent: String(update.progress_percent ?? 0),
+      materialStatus: update.material_status,
+      safetyStatus: update.safety_status,
+      issueSeverity: update.issue_severity,
+      issueNotes: update.issue_notes || "",
+      inspectorName: update.inspector_name,
+    });
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  async function handleDeleteUpdate(updateId: number) {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this construction update?"
+    );
+
+    if (!confirmDelete) {
+      return;
+    }
+
+    try {
+      setError("");
+      setSuccessMessage("");
+
+      await deleteConstructionUpdate(updateId);
+
+      if (editingUpdateId === updateId) {
+        setEditingUpdateId(null);
+        setFormData(initialFormData);
+      }
+
+      if (latestUpdate?.id === updateId) {
+        setLatestUpdate(null);
+      }
+
+      setSuccessMessage("Construction update deleted successfully.");
+      await loadConstructionUpdates();
+    } catch {
+      setError("Unable to delete construction update. Check backend is running.");
+    }
   }
 
   return (
     <>
-      {/* Page Header */}
       <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-start">
         <div>
           <p className="text-sm font-bold uppercase tracking-[0.35em] text-cyan-300">
@@ -153,230 +287,291 @@ export default function ConstructionPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-base leading-7 text-slate-300">
-            Track site progress, compare planned vs actual completion, identify
-            delay risks, record safety notes, and generate weekly construction
-            intelligence reports.
+            Track site progress, construction stage, material availability,
+            safety status, issue severity, and backend-generated risk summary.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleAnalyzeSiteProgress}
-          className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300"
-        >
-          Analyze Site Progress
-        </button>
+        {isEditing && (
+          <button
+            type="button"
+            onClick={resetForm}
+            className="rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:border-cyan-400 hover:text-cyan-300"
+          >
+            Cancel Edit
+          </button>
+        )}
       </div>
 
-      {/* Main Grid */}
+      {error && (
+        <div className="mb-6 rounded-2xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200">
+          {error}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="mb-6 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-4 text-sm text-emerald-200">
+          {successMessage}
+        </div>
+      )}
+
       <div className="grid gap-6 xl:grid-cols-3">
-        {/* Input Form */}
         <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20 xl:col-span-2">
           <h2 className="text-2xl font-bold text-white">
-            Site Progress Input
+            {isEditing ? "Edit Site Update" : "Site Progress Input"}
           </h2>
 
           <p className="mt-2 text-sm text-slate-400">
-            Enter current construction details. The AI-style report will be
-            generated from these values.
+            {isEditing
+              ? "Update the selected site report. Changes will be saved in backend."
+              : "Enter current site details. The update will be saved through FastAPI and SQLite."}
           </p>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-2">
-            <div>
+          <form onSubmit={handleSaveConstructionUpdate}>
+            <div className="mt-6 grid gap-5 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-300">
+                  Project Name
+                </label>
+
+                <input
+                  type="text"
+                  value={formData.projectName}
+                  onChange={(event) =>
+                    updateField("projectName", event.target.value)
+                  }
+                  placeholder="Example: Luxury Villa Design"
+                  className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-300">
+                  Site Location
+                </label>
+
+                <input
+                  type="text"
+                  value={formData.siteLocation}
+                  onChange={(event) =>
+                    updateField("siteLocation", event.target.value)
+                  }
+                  placeholder="Example: Chennai, Tamil Nadu"
+                  className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-300">
+                  Construction Stage
+                </label>
+
+                <select
+                  value={formData.workStage}
+                  onChange={(event) =>
+                    updateField("workStage", event.target.value)
+                  }
+                  className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400"
+                >
+                  <option>Foundation</option>
+                  <option>Structural Work</option>
+                  <option>Brickwork</option>
+                  <option>Electrical and Plumbing</option>
+                  <option>Interior Finishing</option>
+                  <option>Quality Inspection</option>
+                  <option>Handover Preparation</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-300">
+                  Progress %
+                </label>
+
+                <input
+                  type="number"
+                  value={formData.progressPercent}
+                  onChange={(event) =>
+                    updateField("progressPercent", event.target.value)
+                  }
+                  placeholder="Example: 65"
+                  className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
+                />
+
+                <p className="mt-2 text-xs text-slate-500">
+                  Value should be between 0 and 100.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-300">
+                  Material Status
+                </label>
+
+                <select
+                  value={formData.materialStatus}
+                  onChange={(event) =>
+                    updateField("materialStatus", event.target.value)
+                  }
+                  className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400"
+                >
+                  <option>Available</option>
+                  <option>Material delay</option>
+                  <option>Shortage</option>
+                  <option>Procurement pending</option>
+                  <option>Delivered</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-300">
+                  Safety Status
+                </label>
+
+                <select
+                  value={formData.safetyStatus}
+                  onChange={(event) =>
+                    updateField("safetyStatus", event.target.value)
+                  }
+                  className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400"
+                >
+                  <option>Safe</option>
+                  <option>Needs Review</option>
+                  <option>Safety risk</option>
+                  <option>Unsafe</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-300">
+                  Issue Severity
+                </label>
+
+                <select
+                  value={formData.issueSeverity}
+                  onChange={(event) =>
+                    updateField(
+                      "issueSeverity",
+                      event.target.value as IssueSeverity
+                    )
+                  }
+                  className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400"
+                >
+                  <option>Low</option>
+                  <option>Medium</option>
+                  <option>High</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-300">
+                  Inspector Name
+                </label>
+
+                <input
+                  type="text"
+                  value={formData.inspectorName}
+                  onChange={(event) =>
+                    updateField("inspectorName", event.target.value)
+                  }
+                  placeholder="Example: Site Engineer Demo"
+                  className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5">
               <label className="mb-2 block text-sm font-semibold text-slate-300">
-                Project Name
+                Site Observation / Issue Notes
               </label>
 
-              <input
-                type="text"
-                value={formData.projectName}
+              <textarea
+                rows={6}
+                value={formData.issueNotes}
                 onChange={(event) =>
-                  updateField("projectName", event.target.value)
+                  updateField("issueNotes", event.target.value)
                 }
-                placeholder="Example: Luxury Villa Design"
-                className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
+                placeholder="Example: Material delivery was delayed by 4 days. Labour availability was lower than planned this week."
+                className="w-full resize-none rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
               />
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-300">
-                Site Location
-              </label>
-
-              <input
-                type="text"
-                value={formData.location}
-                onChange={(event) => updateField("location", event.target.value)}
-                placeholder="Example: Chennai"
-                className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-300">
-                Construction Stage
-              </label>
-
-              <select
-                value={formData.stage}
-                onChange={(event) => updateField("stage", event.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400"
+            <div className="mt-6 flex flex-wrap gap-4">
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <option>Foundation Work</option>
-                <option>Structural Work</option>
-                <option>Brickwork</option>
-                <option>Electrical and Plumbing</option>
-                <option>Interior Finishing</option>
-                <option>Quality Inspection</option>
-                <option>Handover Preparation</option>
-              </select>
+                {saving
+                  ? "Saving..."
+                  : isEditing
+                  ? "Update Site Report"
+                  : "Save Site Update"}
+              </button>
+
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:border-cyan-400 hover:text-cyan-300"
+              >
+                Clear
+              </button>
             </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-300">
-                Upload Site Photo
-              </label>
-
-              <input
-                type="file"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  updateField("uploadedFileName", file ? file.name : "");
-                }}
-                className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-300 outline-none transition file:mr-4 file:rounded-lg file:border-0 file:bg-cyan-400 file:px-3 file:py-2 file:text-sm file:font-bold file:text-slate-950 focus:border-cyan-400"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-300">
-                Planned Progress %
-              </label>
-
-              <input
-                type="number"
-                value={formData.plannedProgress}
-                onChange={(event) =>
-                  updateField("plannedProgress", event.target.value)
-                }
-                placeholder="Example: 80"
-                className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-300">
-                Actual Progress %
-              </label>
-
-              <input
-                type="number"
-                value={formData.actualProgress}
-                onChange={(event) =>
-                  updateField("actualProgress", event.target.value)
-                }
-                placeholder="Example: 65"
-                className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
-              />
-            </div>
-          </div>
-
-          <div className="mt-5">
-            <label className="mb-2 block text-sm font-semibold text-slate-300">
-              Delay / Site Observation Notes
-            </label>
-
-            <textarea
-              rows={5}
-              value={formData.delayReason}
-              onChange={(event) =>
-                updateField("delayReason", event.target.value)
-              }
-              placeholder="Example: Material delivery was delayed by 4 days. Labour availability was lower than planned this week."
-              className="w-full resize-none rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
-            />
-          </div>
-
-          <div className="mt-5">
-            <label className="mb-2 block text-sm font-semibold text-slate-300">
-              Safety Notes
-            </label>
-
-            <textarea
-              rows={4}
-              value={formData.safetyNotes}
-              onChange={(event) =>
-                updateField("safetyNotes", event.target.value)
-              }
-              placeholder="Example: Site access is clear. Workers are using safety equipment. Material stacking needs better organization."
-              className="w-full resize-none rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
-            />
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-4">
-            <button
-              type="button"
-              onClick={handleAnalyzeSiteProgress}
-              className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300"
-            >
-              Analyze Site Progress
-            </button>
-
-            <button
-              type="button"
-              className="rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:border-cyan-400 hover:text-cyan-300"
-            >
-              Save Site Update
-            </button>
-          </div>
+          </form>
         </div>
 
-        {/* AI Monitoring Summary */}
         <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
           <h2 className="text-2xl font-bold text-white">
             AI Monitoring Summary
           </h2>
 
           <p className="mt-2 text-sm text-slate-400">
-            {isAnalyzed
-              ? "Generated from current site progress input."
-              : "Fill the form and click Analyze Site Progress."}
+            {latestUpdate
+              ? "Latest site update generated from backend."
+              : "Submit site progress to generate monitoring summary."}
           </p>
 
-          {!isAnalyzed ? (
+          {!latestUpdate ? (
             <div className="mt-6 rounded-2xl border border-dashed border-white/15 bg-slate-950/70 p-6 text-center">
               <p className="text-sm leading-6 text-slate-400">
-                No site analysis generated yet.
+                No site update generated yet.
               </p>
             </div>
           ) : (
             <div className="mt-6 space-y-4">
               <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-                <p className="text-sm text-slate-400">Actual Completion</p>
-                <p className="mt-1 text-3xl font-bold text-white">
-                  {actualProgress}%
+                <p className="text-sm text-slate-400">Project</p>
+                <p className="mt-1 font-semibold text-white">
+                  {latestUpdate.project_name}
                 </p>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-                <p className="text-sm text-slate-400">Progress Gap</p>
-                <p className="mt-1 text-2xl font-bold text-white">
-                  {delayGap > 0 ? `${delayGap}% Behind` : "On Track"}
+                <p className="text-sm text-slate-400">Actual Completion</p>
+                <p className="mt-1 text-3xl font-bold text-white">
+                  {latestUpdate.progress_percent}%
                 </p>
               </div>
 
               <div
-                className={`rounded-2xl border p-4 ${getRiskStyle(delayRisk)}`}
+                className={`rounded-2xl border p-4 ${getRiskStyle(
+                  latestUpdate.issue_severity
+                )}`}
               >
-                <p className="text-sm font-semibold">Delay Risk</p>
-                <p className="mt-1 text-2xl font-bold">{delayRisk}</p>
+                <p className="text-sm font-semibold">Issue Severity</p>
+                <p className="mt-1 text-2xl font-bold">
+                  {latestUpdate.issue_severity}
+                </p>
               </div>
 
-              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
-                <p className="text-sm font-semibold text-cyan-300">
-                  Uploaded File
-                </p>
-                <p className="mt-1 text-sm text-slate-300">
-                  {formData.uploadedFileName || "No file uploaded"}
+              <div
+                className={`rounded-2xl border p-4 ${getSafetyStyle(
+                  latestUpdate.safety_status
+                )}`}
+              >
+                <p className="text-sm font-semibold">Safety Status</p>
+                <p className="mt-1 text-xl font-bold">
+                  {latestUpdate.safety_status}
                 </p>
               </div>
             </div>
@@ -384,92 +579,193 @@ export default function ConstructionPage() {
         </div>
       </div>
 
-      {/* Progress Bar */}
-      {isAnalyzed && (
+      {latestUpdate && (
         <div className="mt-8 rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-white">
-                Construction Progress Comparison
-              </h2>
+          <div className="mb-4">
+            <h2 className="text-2xl font-bold text-white">
+              Construction Progress
+            </h2>
 
-              <p className="mt-2 text-sm text-slate-400">
-                Planned vs actual site progress.
-              </p>
-            </div>
+            <p className="mt-2 text-sm text-slate-400">
+              Latest saved progress from backend.
+            </p>
           </div>
 
-          <div className="space-y-5">
-            <div>
-              <div className="mb-2 flex justify-between text-sm">
-                <span className="text-slate-400">Planned Progress</span>
-                <span className="font-semibold text-cyan-300">
-                  {plannedProgress}%
-                </span>
-              </div>
-
-              <div className="h-3 rounded-full bg-slate-800">
-                <div
-                  className="h-3 rounded-full bg-cyan-400"
-                  style={{ width: `${plannedProgress}%` }}
-                />
-              </div>
+          <div>
+            <div className="mb-2 flex justify-between text-sm">
+              <span className="text-slate-400">Site Progress</span>
+              <span className="font-semibold text-cyan-300">
+                {latestUpdate.progress_percent}%
+              </span>
             </div>
 
-            <div>
-              <div className="mb-2 flex justify-between text-sm">
-                <span className="text-slate-400">Actual Progress</span>
-                <span className="font-semibold text-orange-300">
-                  {actualProgress}%
-                </span>
-              </div>
-
-              <div className="h-3 rounded-full bg-slate-800">
-                <div
-                  className="h-3 rounded-full bg-orange-400"
-                  style={{ width: `${actualProgress}%` }}
-                />
-              </div>
+            <div className="h-3 rounded-full bg-slate-800">
+              <div
+                className="h-3 rounded-full bg-cyan-400"
+                style={{ width: `${latestUpdate.progress_percent}%` }}
+              />
             </div>
           </div>
         </div>
       )}
 
-      {/* AI Reports */}
       <div className="mt-8 rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
         <div className="mb-6">
           <h2 className="text-2xl font-bold text-white">
-            Weekly Site Intelligence Report
+            Backend Generated Site Intelligence
           </h2>
 
           <p className="mt-2 text-sm text-slate-400">
-            {isAnalyzed
-              ? "Report generated from the current construction progress input."
-              : "Reports will appear after site progress analysis."}
+            This risk summary comes from the FastAPI construction monitoring
+            logic.
           </p>
         </div>
 
-        {!isAnalyzed ? (
+        {!latestUpdate ? (
           <div className="rounded-2xl border border-dashed border-white/15 bg-slate-950/70 p-6 text-center">
             <p className="text-sm leading-6 text-slate-400">
-              Enter construction data and click Analyze Site Progress to
-              generate site reports.
+              Submit construction data to generate risk summary.
             </p>
           </div>
         ) : (
           <div className="grid gap-5 md:grid-cols-2">
-            {siteReports.map((report) => (
+            <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-5">
+              <h3 className="text-lg font-bold text-cyan-300">
+                Site Observation
+              </h3>
+
+              <p className="mt-3 text-sm leading-6 text-slate-300">
+                {latestUpdate.issue_notes}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-5">
+              <h3 className="text-lg font-bold text-cyan-300">
+                AI Risk Summary
+              </h3>
+
+              <p className="mt-3 text-sm leading-6 text-slate-300">
+                {latestUpdate.ai_risk_summary}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-8 rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-white">
+            Saved Construction Updates
+          </h2>
+
+          <p className="mt-2 text-sm text-slate-400">
+            These records are loaded from the backend database.
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-6 text-sm text-slate-400">
+            Loading construction updates...
+          </div>
+        ) : updates.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-white/15 bg-slate-950/70 p-6 text-center">
+            <p className="text-sm text-slate-400">
+              No construction updates saved yet.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-5">
+            {updates.map((update) => (
               <div
-                key={report.title}
+                key={update.id}
                 className="rounded-2xl border border-white/10 bg-slate-950/70 p-5 transition hover:border-cyan-400/40"
               >
-                <h3 className="text-lg font-bold text-cyan-300">
-                  {report.title}
-                </h3>
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="mb-3 flex flex-wrap gap-3">
+                      <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-300">
+                        {update.work_stage}
+                      </span>
 
-                <p className="mt-3 text-sm leading-6 text-slate-300">
-                  {report.description}
-                </p>
+                      <span
+                        className={`rounded-full border px-4 py-2 text-xs font-semibold ${getRiskStyle(
+                          update.issue_severity
+                        )}`}
+                      >
+                        {update.issue_severity} Issue
+                      </span>
+
+                      <span
+                        className={`rounded-full border px-4 py-2 text-xs font-semibold ${getSafetyStyle(
+                          update.safety_status
+                        )}`}
+                      >
+                        {update.safety_status}
+                      </span>
+                    </div>
+
+                    <h3 className="text-xl font-bold text-white">
+                      {update.project_name}
+                    </h3>
+
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
+                      Location: {update.site_location} · Inspector:{" "}
+                      {update.inspector_name}
+                    </p>
+
+                    <p className="mt-3 text-sm leading-6 text-slate-300">
+                      {update.ai_risk_summary}
+                    </p>
+                  </div>
+
+                  <div className="min-w-[160px] rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <p className="text-xs text-slate-500">Progress</p>
+                    <p className="mt-1 text-2xl font-bold text-white">
+                      {update.progress_percent}%
+                    </p>
+
+                    <p className="mt-4 text-xs text-slate-500">ID</p>
+                    <p className="mt-1 text-sm font-semibold text-white">
+                      {update.id}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5">
+                  <div className="mb-2 flex justify-between text-sm">
+                    <span className="text-slate-400">Site Progress</span>
+                    <span className="font-semibold text-cyan-300">
+                      {update.progress_percent}%
+                    </span>
+                  </div>
+
+                  <div className="h-2 rounded-full bg-slate-800">
+                    <div
+                      className="h-2 rounded-full bg-cyan-400"
+                      style={{
+                        width: `${update.progress_percent}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleEditUpdate(update)}
+                    className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/20"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteUpdate(update.id)}
+                    className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-400/20"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             ))}
           </div>

@@ -2,567 +2,522 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-
-type DelayRisk = "Low" | "Medium" | "High";
+import { getAnalyticsSummary, getProjects } from "../lib/api";
 
 type Project = {
-  id: string;
+  id: number;
   name: string;
   client: string;
+  project_type: string;
   location: string;
+  status: string;
   stage: string;
-  revenue: number;
   progress: number;
-  clientSatisfaction: number;
-  delayRisk: DelayRisk;
+  budget: number;
+  deadline: string;
+  description?: string;
+  delay_risk: "Low" | "Medium" | "High";
+  client_satisfaction: number;
 };
 
-type DocumentStatus = "Draft" | "In Review" | "Approved" | "Rejected";
+type ProjectsResponse = {
+  total: number;
+  projects: Project[];
+};
 
-type DocumentCategory =
-  | "Requirement"
-  | "2D Floor Plan"
-  | "Interior Design"
-  | "Construction"
-  | "Contract"
-  | "Report"
-  | "Approval";
+type AnalyticsSummary = {
+  total_projects: number;
+  total_budget: number;
+  average_progress: number;
+  high_risk_projects: number;
+  completed_projects: number;
+  planning_projects: number;
+  project_type_breakdown: Record<string, number>;
+};
 
-type ProjectDocument = {
-  id: string;
-  projectId: string;
+type Activity = {
+  id: number;
   title: string;
-  category: DocumentCategory;
-  status: DocumentStatus;
-  fileName: string;
-  owner: string;
-  createdAt: string;
+  description: string;
+  time: string;
 };
 
-const PROJECT_STORAGE_KEY = "archiflow-projects";
-const DOCUMENT_STORAGE_KEY = "archiflow-documents";
+type Insight = {
+  id: number;
+  title: string;
+  description: string;
+  priority: "High" | "Medium" | "Low";
+};
 
-const defaultProjects: Project[] = [
+const activities: Activity[] = [
   {
-    id: "project-1",
-    name: "Luxury Villa Design",
-    client: "Rohan Sharma",
-    location: "Chennai",
-    stage: "Design Planning",
-    revenue: 8500000,
-    progress: 42,
-    clientSatisfaction: 88,
-    delayRisk: "Medium",
+    id: 1,
+    title: "Backend connected",
+    description: "Dashboard project data is fetched from FastAPI and SQLite.",
+    time: "Live",
   },
   {
-    id: "project-2",
-    name: "Apartment Interior Plan",
-    client: "Meera Homes",
-    location: "Bengaluru",
-    stage: "Interior Design",
-    revenue: 1800000,
-    progress: 68,
-    clientSatisfaction: 94,
-    delayRisk: "Low",
+    id: 2,
+    title: "Analytics API active",
+    description: "Dashboard statistics are loaded from /analytics/summary.",
+    time: "Live",
   },
   {
-    id: "project-3",
-    name: "Commercial Workspace",
-    client: "Nova Tech Park",
-    location: "Hyderabad",
-    stage: "Construction Monitoring",
-    revenue: 12000000,
-    progress: 74,
-    clientSatisfaction: 91,
-    delayRisk: "Low",
+    id: 3,
+    title: "Project portfolio loaded",
+    description: "Architecture project records are displayed from /projects.",
+    time: "Live",
+  },
+  {
+    id: 4,
+    title: "Next milestone",
+    description: "Connect Projects, Requirements, Interior, Documents, and Feedback pages.",
+    time: "Next",
   },
 ];
 
-const defaultDocuments: ProjectDocument[] = [
+const insights: Insight[] = [
   {
-    id: "doc-1",
-    projectId: "project-1",
-    title: "Initial Client Requirement Brief",
-    category: "Requirement",
-    status: "Approved",
-    fileName: "client-requirement-brief.pdf",
-    owner: "Project Manager",
-    createdAt: "2026-06-20",
+    id: 1,
+    title: "Backend foundation is stable",
+    description:
+      "FastAPI, SQLite, and Next.js are now working together through live API calls.",
+    priority: "High",
   },
   {
-    id: "doc-2",
-    projectId: "project-1",
-    title: "Ground Floor 2D Concept Plan",
-    category: "2D Floor Plan",
-    status: "In Review",
-    fileName: "ground-floor-plan.png",
-    owner: "Architect",
-    createdAt: "2026-06-20",
+    id: 2,
+    title: "Frontend integration started",
+    description:
+      "The dashboard is the first page connected to backend project and analytics data.",
+    priority: "Medium",
+  },
+  {
+    id: 3,
+    title: "Portfolio readiness improving",
+    description:
+      "After connecting all pages, the project becomes a strong MVP for GitHub and LinkedIn.",
+    priority: "Low",
   },
 ];
 
-function formatCurrency(amount: number) {
-  if (amount >= 10000000) {
-    return `₹${(amount / 10000000).toFixed(1)}Cr`;
+function formatCurrency(amount?: number | string | null) {
+  const numericAmount = typeof amount === "string" ? Number(amount) : amount;
+
+  if (typeof numericAmount !== "number" || Number.isNaN(numericAmount)) {
+    return "₹0";
   }
 
-  if (amount >= 100000) {
-    return `₹${(amount / 100000).toFixed(1)}L`;
-  }
-
-  return `₹${amount.toLocaleString("en-IN")}`;
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(numericAmount);
 }
 
-function getAverage(projects: Project[], key: "progress" | "clientSatisfaction") {
-  if (projects.length === 0) {
-    return 0;
+function getPriorityStyle(priority: Insight["priority"]) {
+  if (priority === "High") {
+    return "border-red-400/30 bg-red-400/10 text-red-200";
   }
 
-  const total = projects.reduce((sum, project) => sum + project[key], 0);
-  return Math.round(total / projects.length);
+  if (priority === "Medium") {
+    return "border-amber-400/30 bg-amber-400/10 text-amber-200";
+  }
+
+  return "border-emerald-400/30 bg-emerald-400/10 text-emerald-200";
 }
 
-function getRiskStyle(risk: DelayRisk) {
-  if (risk === "Low") {
-    return "border-green-400/20 bg-green-400/10 text-green-300";
+function getRiskStyle(risk: Project["delay_risk"]) {
+  if (risk === "High") {
+    return "border-red-400/30 bg-red-400/10 text-red-200";
   }
 
   if (risk === "Medium") {
-    return "border-orange-400/20 bg-orange-400/10 text-orange-300";
+    return "border-amber-400/30 bg-amber-400/10 text-amber-200";
   }
 
-  return "border-red-400/20 bg-red-400/10 text-red-300";
+  return "border-emerald-400/30 bg-emerald-400/10 text-emerald-200";
 }
 
 export default function DashboardPage() {
-  const [projects, setProjects] = useState<Project[]>(defaultProjects);
-  const [documents, setDocuments] =
-    useState<ProjectDocument[]>(defaultDocuments);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const storedProjects = localStorage.getItem(PROJECT_STORAGE_KEY);
-    const storedDocuments = localStorage.getItem(DOCUMENT_STORAGE_KEY);
+    async function loadDashboardData() {
+      try {
+        const [projectsData, analyticsData] = await Promise.all([
+          getProjects() as Promise<ProjectsResponse>,
+          getAnalyticsSummary() as Promise<AnalyticsSummary>,
+        ]);
 
-    if (storedProjects) {
-      setProjects(JSON.parse(storedProjects));
-    } else {
-      localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(defaultProjects));
+        setProjects(projectsData.projects || []);
+        setAnalytics(analyticsData);
+      } catch {
+        setError("Unable to connect to FastAPI backend.");
+      } finally {
+        setLoading(false);
+      }
     }
 
-    if (storedDocuments) {
-      setDocuments(JSON.parse(storedDocuments));
-    } else {
-      localStorage.setItem(
-        DOCUMENT_STORAGE_KEY,
-        JSON.stringify(defaultDocuments)
-      );
-    }
+    loadDashboardData();
   }, []);
 
-  const totalProjects = projects.length;
-
-  const activeProjects = projects.filter(
-    (project) => project.stage !== "Completed"
-  ).length;
-
-  const totalRevenue = projects.reduce(
-    (total, project) => total + project.revenue,
-    0
-  );
-
-  const averageProgress = getAverage(projects, "progress");
-
-  const averageSatisfaction = getAverage(projects, "clientSatisfaction");
-
-  const highRiskProjects = projects.filter(
-    (project) => project.delayRisk === "High"
-  ).length;
-
-  const totalDocuments = documents.length;
-
-  const approvedDocuments = documents.filter(
-    (document) => document.status === "Approved"
-  ).length;
-
-  const inReviewDocuments = documents.filter(
-    (document) => document.status === "In Review"
-  ).length;
-
-  const recentProjects = projects.slice(0, 4);
-
-  const recentDocuments = documents.slice(0, 4);
+  const totalProjects = analytics?.total_projects ?? projects.length;
+  const averageProgress = analytics?.average_progress ?? 0;
+  const totalBudget = analytics?.total_budget ?? 0;
+  const highRiskProjects = analytics?.high_risk_projects ?? 0;
+  const planningProjects = analytics?.planning_projects ?? 0;
+  const projectTypeBreakdown = analytics?.project_type_breakdown ?? {};
 
   return (
-    <>
-      {/* Page Header */}
-      <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-start">
-        <div>
-          <p className="text-sm font-bold uppercase tracking-[0.35em] text-cyan-300">
-            Dashboard
-          </p>
-
-          <h1 className="mt-4 text-4xl font-bold tracking-tight text-white">
-            ArchiFlow AI Control Center
-          </h1>
-
-          <p className="mt-3 max-w-3xl text-base leading-7 text-slate-300">
-            Monitor project performance, revenue, document status, client
-            satisfaction, delay risks, and AI workflow modules from one
-            connected workspace.
-          </p>
-        </div>
-
-        <Link
-          href="/dashboard/projects"
-          className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300"
-        >
-          Add New Project
-        </Link>
-      </div>
-
-      {/* Main Stats */}
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <p className="text-sm text-slate-400">Total Projects</p>
-          <h2 className="mt-3 text-4xl font-bold text-white">
-            {totalProjects}
-          </h2>
-          <p className="mt-2 text-sm text-slate-400">
-            Projects saved in workspace
-          </p>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <p className="text-sm text-slate-400">Active Projects</p>
-          <h2 className="mt-3 text-4xl font-bold text-white">
-            {activeProjects}
-          </h2>
-          <p className="mt-2 text-sm text-slate-400">
-            Projects currently running
-          </p>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <p className="text-sm text-slate-400">Projected Revenue</p>
-          <h2 className="mt-3 text-4xl font-bold text-white">
-            {formatCurrency(totalRevenue)}
-          </h2>
-          <p className="mt-2 text-sm text-slate-400">
-            Total value of all projects
-          </p>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <p className="text-sm text-slate-400">Avg. Progress</p>
-          <h2 className="mt-3 text-4xl font-bold text-white">
-            {averageProgress}%
-          </h2>
-          <p className="mt-2 text-sm text-slate-400">
-            Overall project completion
-          </p>
-        </div>
-      </div>
-
-      {/* Secondary Stats */}
-      <div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-3xl border border-green-400/20 bg-green-400/10 p-6 shadow-2xl shadow-black/20">
-          <p className="text-sm font-semibold text-green-300">
-            Client Satisfaction
-          </p>
-          <h2 className="mt-3 text-4xl font-bold text-white">
-            {averageSatisfaction}%
-          </h2>
-          <p className="mt-2 text-sm text-green-200/80">
-            Average feedback score
-          </p>
-        </div>
-
-        <div className="rounded-3xl border border-red-400/20 bg-red-400/10 p-6 shadow-2xl shadow-black/20">
-          <p className="text-sm font-semibold text-red-300">
-            High Risk Projects
-          </p>
-          <h2 className="mt-3 text-4xl font-bold text-white">
-            {highRiskProjects}
-          </h2>
-          <p className="mt-2 text-sm text-red-200/80">
-            Need project manager review
-          </p>
-        </div>
-
-        <div className="rounded-3xl border border-cyan-400/20 bg-cyan-400/10 p-6 shadow-2xl shadow-black/20">
-          <p className="text-sm font-semibold text-cyan-300">
-            Total Documents
-          </p>
-          <h2 className="mt-3 text-4xl font-bold text-white">
-            {totalDocuments}
-          </h2>
-          <p className="mt-2 text-sm text-cyan-200/80">
-            Project files and records
-          </p>
-        </div>
-
-        <div className="rounded-3xl border border-orange-400/20 bg-orange-400/10 p-6 shadow-2xl shadow-black/20">
-          <p className="text-sm font-semibold text-orange-300">
-            Documents In Review
-          </p>
-          <h2 className="mt-3 text-4xl font-bold text-white">
-            {inReviewDocuments}
-          </h2>
-          <p className="mt-2 text-sm text-orange-200/80">
-            Waiting for approval
-          </p>
-        </div>
-      </div>
-
-      {/* Main Content Grid */}
-      <div className="mt-8 grid gap-6 xl:grid-cols-3">
-        {/* Project Overview */}
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20 xl:col-span-2">
-          <div className="mb-6 flex items-center justify-between gap-4">
+    <main className="min-h-screen bg-slate-950 px-6 py-8 text-white">
+      <div className="mx-auto max-w-7xl">
+        <section className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-slate-900 via-slate-950 to-black p-8 shadow-2xl shadow-slate-950/60">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-2xl font-bold text-white">
-                Recent Projects
-              </h2>
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300">
+                ArchiFlow AI Command Center
+              </p>
 
-              <p className="mt-2 text-sm text-slate-400">
-                Latest projects from localStorage.
+              <h1 className="mt-4 text-3xl font-bold tracking-tight text-white md:text-4xl">
+                Architecture Workflow Dashboard
+              </h1>
+
+              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-400">
+                Monitor architecture projects, design progress, budgets, AI
+                insights, construction workflow status, and client engagement
+                from one intelligent workspace.
               </p>
             </div>
 
-            <Link
-              href="/dashboard/projects"
-              className="text-sm font-semibold text-cyan-300 hover:text-cyan-200"
-            >
-              View all
-            </Link>
-          </div>
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/dashboard/ar-vr"
+                className="rounded-2xl bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+              >
+                Open AR/VR Module
+              </Link>
 
-          {recentProjects.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/15 bg-slate-950/70 p-8 text-center">
-              <p className="text-sm text-slate-400">
-                No projects added yet. Add a new project from the Projects page.
-              </p>
+              <Link
+                href="/dashboard/backend-test"
+                className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:border-cyan-400/50 hover:text-cyan-200"
+              >
+                Test Backend API
+              </Link>
             </div>
-          ) : (
-            <div className="grid gap-5">
-              {recentProjects.map((project) => (
-                <div
-                  key={project.id}
-                  className="rounded-2xl border border-white/10 bg-slate-950/70 p-5 transition hover:border-cyan-400/40"
-                >
-                  <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
-                    <div>
-                      <h3 className="text-xl font-bold text-white">
-                        {project.name}
-                      </h3>
-
-                      <p className="mt-2 text-sm leading-6 text-slate-400">
-                        Client: {project.client} · Location: {project.location}
-                      </p>
-
-                      <p className="mt-1 text-sm leading-6 text-slate-400">
-                        Stage: {project.stage} · Value:{" "}
-                        {formatCurrency(project.revenue)}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-3">
-                      <span
-                        className={`rounded-full border px-4 py-2 text-sm font-semibold ${getRiskStyle(
-                          project.delayRisk
-                        )}`}
-                      >
-                        {project.delayRisk} Risk
-                      </span>
-
-                      <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-300">
-                        {project.progress}% Complete
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="mt-5">
-                    <div className="mb-2 flex justify-between text-sm">
-                      <span className="text-slate-400">Progress</span>
-                      <span className="font-semibold text-cyan-300">
-                        {project.progress}%
-                      </span>
-                    </div>
-
-                    <div className="h-2 rounded-full bg-slate-800">
-                      <div
-                        className="h-2 rounded-full bg-cyan-400"
-                        style={{ width: `${project.progress}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* AI Workflow Shortcuts */}
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <h2 className="text-2xl font-bold text-white">
-            AI Workflow Modules
-          </h2>
-
-          <p className="mt-2 text-sm text-slate-400">
-            Quick access to the main ArchiFlow AI modules.
-          </p>
-
-          <div className="mt-6 space-y-3">
-            <Link
-              href="/dashboard/requirements"
-              className="block rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-sm font-semibold text-slate-300 transition hover:border-cyan-400 hover:text-cyan-300"
-            >
-              Requirement Analyzer
-            </Link>
-
-            <Link
-              href="/dashboard/floor-plan"
-              className="block rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-sm font-semibold text-slate-300 transition hover:border-cyan-400 hover:text-cyan-300"
-            >
-              2D Floor Plan Generator
-            </Link>
-
-            <Link
-              href="/dashboard/interior"
-              className="block rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-sm font-semibold text-slate-300 transition hover:border-cyan-400 hover:text-cyan-300"
-            >
-              Interior Design Automation
-            </Link>
-
-            <Link
-              href="/dashboard/visualization"
-              className="block rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-sm font-semibold text-slate-300 transition hover:border-cyan-400 hover:text-cyan-300"
-            >
-              3D Visualization
-            </Link>
-
-            <Link
-              href="/dashboard/ar-vr"
-              className="block rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-sm font-semibold text-slate-300 transition hover:border-cyan-400 hover:text-cyan-300"
-            >
-              AR/VR Experience
-            </Link>
-
-            <Link
-              href="/dashboard/construction"
-              className="block rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-sm font-semibold text-slate-300 transition hover:border-cyan-400 hover:text-cyan-300"
-            >
-              Construction Monitoring
-            </Link>
-
-            <Link
-              href="/dashboard/documents"
-              className="block rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-sm font-semibold text-slate-300 transition hover:border-cyan-400 hover:text-cyan-300"
-            >
-              Documents Management
-            </Link>
-
-            <Link
-              href="/dashboard/analytics"
-              className="block rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-sm font-semibold text-slate-300 transition hover:border-cyan-400 hover:text-cyan-300"
-            >
-              Analytics
-            </Link>
-
-            <Link
-              href="/dashboard/chatbot"
-              className="block rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-sm font-semibold text-slate-300 transition hover:border-cyan-400 hover:text-cyan-300"
-            >
-              AI Client Chatbot
-            </Link>
           </div>
-        </div>
-      </div>
+        </section>
 
-      {/* Documents and Activity */}
-      <div className="mt-8 grid gap-6 xl:grid-cols-2">
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <div className="mb-6 flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-bold text-white">
-                Recent Documents
-              </h2>
+        {loading && (
+          <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-slate-300">
+            Loading dashboard data from FastAPI backend...
+          </section>
+        )}
 
-              <p className="mt-2 text-sm text-slate-400">
-                Latest project documents added to the workspace.
-              </p>
-            </div>
+        {error && (
+          <section className="mt-8 rounded-3xl border border-red-400/30 bg-red-400/10 p-6 text-red-200">
+            {error}
+            <p className="mt-2 text-sm text-red-100/80">
+              Make sure backend is running at http://127.0.0.1:8000
+            </p>
+          </section>
+        )}
 
-            <Link
-              href="/dashboard/documents"
-              className="text-sm font-semibold text-cyan-300 hover:text-cyan-200"
-            >
-              View all
-            </Link>
-          </div>
-
-          <div className="space-y-4">
-            {recentDocuments.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/15 bg-slate-950/70 p-5 text-center">
-                <p className="text-sm text-slate-400">
-                  No documents added yet.
+        {!loading && !error && (
+          <>
+            <section className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+                <p className="text-sm text-slate-400">Total Projects</p>
+                <h2 className="mt-3 text-3xl font-bold text-white">
+                  {totalProjects}
+                </h2>
+                <p className="mt-2 text-sm text-emerald-300">
+                  From Analytics API
                 </p>
               </div>
-            ) : (
-              recentDocuments.map((document) => (
-                <div
-                  key={document.id}
-                  className="rounded-2xl border border-white/10 bg-slate-950/70 p-5"
-                >
-                  <h3 className="font-bold text-white">{document.title}</h3>
 
-                  <p className="mt-2 text-sm text-slate-400">
-                    {document.category} · {document.status}
-                  </p>
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+                <p className="text-sm text-slate-400">Average Progress</p>
+                <h2 className="mt-3 text-3xl font-bold text-white">
+                  {averageProgress}%
+                </h2>
+                <p className="mt-2 text-sm text-cyan-300">
+                  Across all projects
+                </p>
+              </div>
 
-                  <p className="mt-1 text-sm text-slate-500">
-                    File: {document.fileName}
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+                <p className="text-sm text-slate-400">Total Budget</p>
+                <h2 className="mt-3 text-3xl font-bold text-white">
+                  {formatCurrency(totalBudget)}
+                </h2>
+                <p className="mt-2 text-sm text-amber-300">
+                  Estimated portfolio value
+                </p>
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+                <p className="text-sm text-slate-400">High Risk Projects</p>
+                <h2 className="mt-3 text-3xl font-bold text-white">
+                  {highRiskProjects}
+                </h2>
+                <p className="mt-2 text-sm text-red-300">
+                  Needs closer monitoring
+                </p>
+              </div>
+            </section>
+
+            <section className="mt-8 grid gap-6 xl:grid-cols-[1.6fr_1fr]">
+              <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-300">
+                      Project Portfolio
+                    </p>
+
+                    <h2 className="mt-2 text-2xl font-semibold text-white">
+                      Active Design Projects
+                    </h2>
+                  </div>
+
+                  <p className="text-sm text-slate-400">
+                    {projects.length} projects from FastAPI
                   </p>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
 
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <h2 className="text-2xl font-bold text-white">Platform Summary</h2>
+                <div className="mt-6 grid gap-4">
+                  {projects.map((project) => (
+                    <article
+                      key={project.id}
+                      className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 transition hover:border-cyan-400/40"
+                    >
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <span className="rounded-full bg-cyan-400/10 px-3 py-1 text-xs font-semibold text-cyan-200">
+                              {project.project_type}
+                            </span>
 
-          <p className="mt-2 text-sm text-slate-400">
-            Current connected workflow status.
-          </p>
+                            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                              {project.status}
+                            </span>
 
-          <div className="mt-6 space-y-4">
-            <div className="rounded-2xl border border-green-400/20 bg-green-400/10 p-5">
-              <p className="font-bold text-green-300">Connected Data Flow</p>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                Projects, Analytics, Client Portal, Documents, Dashboard, 3D
-                Visualization, and AR/VR pages now use shared localStorage data.
+                            <span
+                              className={`rounded-full border px-3 py-1 text-xs font-semibold ${getRiskStyle(
+                                project.delay_risk
+                              )}`}
+                            >
+                              {project.delay_risk} Risk
+                            </span>
+                          </div>
+
+                          <h3 className="mt-4 text-lg font-semibold text-white">
+                            {project.name}
+                          </h3>
+
+                          <p className="mt-2 text-sm text-slate-400">
+                            {project.location}
+                          </p>
+
+                          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
+                            {project.description}
+                          </p>
+                        </div>
+
+                        <div className="min-w-[190px] rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                          <p className="text-xs text-slate-500">Budget</p>
+                          <p className="mt-1 text-sm font-semibold text-white">
+                            {formatCurrency(project.budget)}
+                          </p>
+
+                          <p className="mt-4 text-xs text-slate-500">
+                            Deadline
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-white">
+                            {project.deadline || "Not set"}
+                          </p>
+
+                          <p className="mt-4 text-xs text-slate-500">
+                            Client Satisfaction
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-white">
+                            {project.client_satisfaction}%
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-5">
+                        <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+                          <span>Progress</span>
+                          <span>{project.progress}%</span>
+                        </div>
+
+                        <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className="h-full rounded-full bg-cyan-400"
+                            style={{
+                              width: `${project.progress}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-300">
+                    Analytics Summary
+                  </p>
+
+                  <h2 className="mt-2 text-2xl font-semibold text-white">
+                    Project Intelligence
+                  </h2>
+
+                  <div className="mt-6 grid gap-4">
+                    <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-4">
+                      <p className="text-sm text-slate-400">
+                        Planning Projects
+                      </p>
+                      <h3 className="mt-2 text-2xl font-bold text-white">
+                        {planningProjects}
+                      </h3>
+                    </div>
+
+                    <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-4">
+                      <p className="text-sm text-slate-400">
+                        Project Type Breakdown
+                      </p>
+
+                      <div className="mt-4 space-y-3">
+                        {Object.entries(projectTypeBreakdown).map(
+                          ([type, count]) => (
+                            <div
+                              key={type}
+                              className="flex items-center justify-between rounded-2xl bg-white/[0.03] px-4 py-3 text-sm"
+                            >
+                              <span className="text-slate-300">{type}</span>
+                              <span className="font-semibold text-white">
+                                {count}
+                              </span>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-300">
+                    AI Insights
+                  </p>
+
+                  <h2 className="mt-2 text-2xl font-semibold text-white">
+                    Design Intelligence
+                  </h2>
+
+                  <div className="mt-6 space-y-4">
+                    {insights.map((insight) => (
+                      <div
+                        key={insight.id}
+                        className="rounded-3xl border border-white/10 bg-slate-950/70 p-4"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-sm font-semibold text-white">
+                            {insight.title}
+                          </h3>
+
+                          <span
+                            className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${getPriorityStyle(
+                              insight.priority
+                            )}`}
+                          >
+                            {insight.priority}
+                          </span>
+                        </div>
+
+                        <p className="mt-3 text-sm leading-6 text-slate-400">
+                          {insight.description}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-300">
+                Recent Activity
               </p>
-            </div>
 
-            <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-5">
-              <p className="font-bold text-cyan-300">Approved Documents</p>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                {approvedDocuments} documents are approved and ready for project
-                execution.
-              </p>
-            </div>
+              <h2 className="mt-2 text-2xl font-semibold text-white">
+                Workflow Updates
+              </h2>
 
-            <div className="rounded-2xl border border-orange-400/20 bg-orange-400/10 p-5">
-              <p className="font-bold text-orange-300">Next Improvement</p>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                Final frontend cleanup, backend database integration, and real
-                AI chatbot connection can be done next.
-              </p>
-            </div>
-          </div>
-        </div>
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                {activities.map((activity) => (
+                  <div
+                    key={activity.id}
+                    className="rounded-3xl border border-white/10 bg-slate-950/70 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-white">
+                          {activity.title}
+                        </h3>
+
+                        <p className="mt-2 text-sm leading-6 text-slate-400">
+                          {activity.description}
+                        </p>
+                      </div>
+
+                      <span className="text-xs text-slate-500">
+                        {activity.time}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-300">
+                    Backend Status
+                  </p>
+
+                  <h2 className="mt-2 text-2xl font-semibold text-white">
+                    FastAPI Dashboard Connection Active
+                  </h2>
+
+                  <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-400">
+                    The main dashboard is now connected to FastAPI project and
+                    analytics endpoints. This confirms the frontend-backend SaaS
+                    foundation is working.
+                  </p>
+                </div>
+
+                <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/10 px-5 py-4">
+                  <p className="text-sm font-semibold text-emerald-200">
+                    Live API Data
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-400">
+                    /projects + /analytics/summary
+                  </p>
+                </div>
+              </div>
+            </section>
+          </>
+        )}
       </div>
-    </>
+    </main>
   );
 }

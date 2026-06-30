@@ -2,20 +2,13 @@
 
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-
-type DelayRisk = "Low" | "Medium" | "High";
-
-type Project = {
-  id: string;
-  name: string;
-  client: string;
-  location: string;
-  stage: string;
-  revenue: number;
-  progress: number;
-  clientSatisfaction: number;
-  delayRisk: DelayRisk;
-};
+import {
+  createDocument,
+  deleteDocument,
+  getDocuments,
+  getProjects,
+  updateDocument,
+} from "../../lib/api";
 
 type DocumentStatus = "Draft" | "In Review" | "Approved" | "Rejected";
 
@@ -28,95 +21,105 @@ type DocumentCategory =
   | "Report"
   | "Approval";
 
+type BackendProject = {
+  id: number;
+  project_name?: string;
+  name?: string;
+  client_name?: string;
+  client?: string;
+  location?: string;
+};
+
+type ProjectResponse = {
+  total: number;
+  projects: BackendProject[];
+};
+
 type ProjectDocument = {
-  id: string;
-  projectId: string;
-  title: string;
-  category: DocumentCategory;
-  status: DocumentStatus;
-  fileName: string;
-  owner: string;
-  createdAt: string;
+  id: number;
+  project_name?: string | null;
+  document_title?: string | null;
+  title?: string | null;
+  document_type?: string | null;
+  category?: string | null;
+  file_name?: string | null;
+  file_url?: string | null;
+  status?: string | null;
+  approval_status?: string | null;
+  uploaded_by?: string | null;
+  owner?: string | null;
+  ai_summary?: string | null;
+  created_at?: string | null;
+};
+
+type DocumentsResponse = {
+  total: number;
+  documents: ProjectDocument[];
 };
 
 type DocumentFormData = {
-  title: string;
-  category: DocumentCategory;
+  documentTitle: string;
+  documentType: DocumentCategory;
   status: DocumentStatus;
   fileName: string;
-  owner: string;
+  fileUrl: string;
+  uploadedBy: string;
 };
-
-const PROJECT_STORAGE_KEY = "archiflow-projects";
-const DOCUMENT_STORAGE_KEY = "archiflow-documents";
-
-const defaultProjects: Project[] = [
-  {
-    id: "project-1",
-    name: "Luxury Villa Design",
-    client: "Rohan Sharma",
-    location: "Chennai",
-    stage: "Design Planning",
-    revenue: 8500000,
-    progress: 42,
-    clientSatisfaction: 88,
-    delayRisk: "Medium",
-  },
-  {
-    id: "project-2",
-    name: "Apartment Interior Plan",
-    client: "Meera Homes",
-    location: "Bengaluru",
-    stage: "Interior Design",
-    revenue: 1800000,
-    progress: 68,
-    clientSatisfaction: 94,
-    delayRisk: "Low",
-  },
-];
-
-const defaultDocuments: ProjectDocument[] = [
-  {
-    id: "doc-1",
-    projectId: "project-1",
-    title: "Initial Client Requirement Brief",
-    category: "Requirement",
-    status: "Approved",
-    fileName: "client-requirement-brief.pdf",
-    owner: "Project Manager",
-    createdAt: "2026-06-20",
-  },
-  {
-    id: "doc-2",
-    projectId: "project-1",
-    title: "Ground Floor 2D Concept Plan",
-    category: "2D Floor Plan",
-    status: "In Review",
-    fileName: "ground-floor-plan.png",
-    owner: "Architect",
-    createdAt: "2026-06-20",
-  },
-  {
-    id: "doc-3",
-    projectId: "project-2",
-    title: "Living Room Mood Board",
-    category: "Interior Design",
-    status: "Draft",
-    fileName: "living-room-moodboard.jpg",
-    owner: "Interior Designer",
-    createdAt: "2026-06-20",
-  },
-];
 
 const initialFormData: DocumentFormData = {
-  title: "",
-  category: "Requirement",
+  documentTitle: "",
+  documentType: "Requirement",
   status: "Draft",
   fileName: "",
-  owner: "",
+  fileUrl: "",
+  uploadedBy: "",
 };
 
-function getStatusStyle(status: DocumentStatus) {
+function getProjectName(project: BackendProject) {
+  return project.project_name || project.name || `Project ${project.id}`;
+}
+
+function getProjectClient(project: BackendProject) {
+  return project.client_name || project.client || "Client";
+}
+
+function getDocumentTitle(document: ProjectDocument) {
+  return document.document_title || document.title || "Untitled Document";
+}
+
+function getDocumentProjectName(document: ProjectDocument) {
+  return document.project_name || "Unassigned Project";
+}
+
+function getDocumentCategory(document: ProjectDocument) {
+  return document.document_type || document.category || "Report";
+}
+
+function getDocumentStatus(document: ProjectDocument) {
+  return document.status || document.approval_status || "Draft";
+}
+
+function getDocumentFileName(document: ProjectDocument) {
+  return document.file_name || "No file selected";
+}
+
+function getDocumentOwner(document: ProjectDocument) {
+  return document.uploaded_by || document.owner || "Project Team";
+}
+
+function getDocumentDate(document: ProjectDocument) {
+  if (!document.created_at) {
+    return "Not available";
+  }
+
+  return new Date(document.created_at).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getStatusStyle(status: string) {
   if (status === "Approved") {
     return "border-green-400/20 bg-green-400/10 text-green-300";
   }
@@ -132,7 +135,7 @@ function getStatusStyle(status: DocumentStatus) {
   return "border-cyan-400/20 bg-cyan-400/10 text-cyan-300";
 }
 
-function getCategoryStyle(category: DocumentCategory) {
+function getCategoryStyle(category: string) {
   if (category === "Requirement") {
     return "border-blue-400/20 bg-blue-400/10 text-blue-300";
   }
@@ -161,57 +164,67 @@ function getCategoryStyle(category: DocumentCategory) {
 }
 
 export default function DocumentsPage() {
-  const [projects, setProjects] = useState<Project[]>(defaultProjects);
-  const [documents, setDocuments] =
-    useState<ProjectDocument[]>(defaultDocuments);
-  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [projects, setProjects] = useState<BackendProject[]>([]);
+  const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [selectedProjectName, setSelectedProjectName] = useState("");
   const [formData, setFormData] = useState<DocumentFormData>(initialFormData);
+  const [editingDocumentId, setEditingDocumentId] = useState<number | null>(
+    null
+  );
+  const [latestDocument, setLatestDocument] =
+    useState<ProjectDocument | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
-  useEffect(() => {
-    const storedProjects = localStorage.getItem(PROJECT_STORAGE_KEY);
-    const storedDocuments = localStorage.getItem(DOCUMENT_STORAGE_KEY);
-
-    if (storedProjects) {
-      const parsedProjects: Project[] = JSON.parse(storedProjects);
-      setProjects(parsedProjects);
-
-      if (parsedProjects.length > 0) {
-        setSelectedProjectId(parsedProjects[0].id);
-      }
-    } else {
-      localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(defaultProjects));
-      setSelectedProjectId(defaultProjects[0].id);
-    }
-
-    if (storedDocuments) {
-      const parsedDocuments: ProjectDocument[] = JSON.parse(storedDocuments);
-      setDocuments(parsedDocuments);
-    } else {
-      localStorage.setItem(
-        DOCUMENT_STORAGE_KEY,
-        JSON.stringify(defaultDocuments)
-      );
-    }
-  }, []);
-
-  const selectedProject =
-    projects.find((project) => project.id === selectedProjectId) || projects[0];
+  const isEditing = editingDocumentId !== null;
 
   const selectedProjectDocuments = documents.filter(
-    (document) => document.projectId === selectedProject?.id
+    (document) => getDocumentProjectName(document) === selectedProjectName
   );
 
   const approvedCount = selectedProjectDocuments.filter(
-    (document) => document.status === "Approved"
+    (document) => getDocumentStatus(document) === "Approved"
   ).length;
 
   const reviewCount = selectedProjectDocuments.filter(
-    (document) => document.status === "In Review"
+    (document) => getDocumentStatus(document) === "In Review"
   ).length;
 
   const draftCount = selectedProjectDocuments.filter(
-    (document) => document.status === "Draft"
+    (document) => getDocumentStatus(document) === "Draft"
   ).length;
+
+  async function loadPageData() {
+    try {
+      setLoading(true);
+      setError("");
+
+      const [projectData, documentData] = await Promise.all([
+        getProjects() as Promise<ProjectResponse>,
+        getDocuments() as Promise<DocumentsResponse>,
+      ]);
+
+      const loadedProjects = projectData.projects || [];
+      const loadedDocuments = documentData.documents || [];
+
+      setProjects(loadedProjects);
+      setDocuments(loadedDocuments);
+
+      if (!selectedProjectName && loadedProjects.length > 0) {
+        setSelectedProjectName(getProjectName(loadedProjects[0]));
+      }
+    } catch {
+      setError("Unable to load documents from backend.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadPageData();
+  }, []);
 
   function updateField<K extends keyof DocumentFormData>(
     field: K,
@@ -221,65 +234,144 @@ export default function DocumentsPage() {
       ...previousData,
       [field]: value,
     }));
+
+    setSuccessMessage("");
   }
 
-  function saveDocuments(updatedDocuments: ProjectDocument[]) {
-    setDocuments(updatedDocuments);
-    localStorage.setItem(DOCUMENT_STORAGE_KEY, JSON.stringify(updatedDocuments));
+  function resetForm() {
+    setFormData(initialFormData);
+    setEditingDocumentId(null);
+    setLatestDocument(null);
+    setError("");
+    setSuccessMessage("");
   }
 
-  function handleAddDocument(event: FormEvent<HTMLFormElement>) {
+  function clearFormAfterSave() {
+    setFormData(initialFormData);
+    setEditingDocumentId(null);
+  }
+
+  function buildDocumentPayload() {
+    const title = formData.documentTitle.trim();
+    const fileName = formData.fileName.trim() || "No file selected";
+    const uploadedBy = formData.uploadedBy.trim() || "Project Team";
+
+    return {
+      project_name: selectedProjectName,
+      document_title: title,
+      title: title,
+      document_type: formData.documentType,
+      category: formData.documentType,
+      file_name: fileName,
+      file_url: formData.fileUrl.trim() || null,
+      status: formData.status,
+      approval_status: formData.status,
+      uploaded_by: uploadedBy,
+      owner: uploadedBy,
+    };
+  }
+
+  async function handleSaveDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!formData.title.trim()) {
+    if (!selectedProjectName) {
+      alert("Please select a project first.");
+      return;
+    }
+
+    if (!formData.documentTitle.trim()) {
       alert("Please enter document title.");
       return;
     }
 
-    if (!selectedProject) {
-      alert("Please add or select a project first.");
+    try {
+      setSaving(true);
+      setError("");
+      setSuccessMessage("");
+
+      const payload = buildDocumentPayload();
+
+      if (isEditing && editingDocumentId !== null) {
+        const updatedDocument = (await updateDocument(
+          editingDocumentId,
+          payload
+        )) as ProjectDocument;
+
+        setLatestDocument(updatedDocument);
+        setSuccessMessage("Document updated successfully.");
+      } else {
+        const createdDocument = (await createDocument(
+          payload
+        )) as ProjectDocument;
+
+        setLatestDocument(createdDocument);
+        setSuccessMessage("Document added successfully.");
+      }
+
+      clearFormAfterSave();
+      await loadPageData();
+    } catch {
+      setError("Unable to save document. Check backend is running.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleEditDocument(document: ProjectDocument) {
+    setEditingDocumentId(document.id);
+    setLatestDocument(document);
+    setSelectedProjectName(getDocumentProjectName(document));
+    setError("");
+    setSuccessMessage("");
+
+    setFormData({
+      documentTitle: getDocumentTitle(document),
+      documentType: getDocumentCategory(document) as DocumentCategory,
+      status: getDocumentStatus(document) as DocumentStatus,
+      fileName: getDocumentFileName(document),
+      fileUrl: document.file_url || "",
+      uploadedBy: getDocumentOwner(document),
+    });
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  async function handleDeleteDocument(documentId: number) {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this document?"
+    );
+
+    if (!confirmDelete) {
       return;
     }
 
-    const newDocument: ProjectDocument = {
-      id: `doc-${Date.now()}`,
-      projectId: selectedProject.id,
-      title: formData.title,
-      category: formData.category,
-      status: formData.status,
-      fileName: formData.fileName || "No file selected",
-      owner: formData.owner || "Not assigned",
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
+    try {
+      setError("");
+      setSuccessMessage("");
 
-    const updatedDocuments = [newDocument, ...documents];
+      await deleteDocument(documentId);
 
-    saveDocuments(updatedDocuments);
-    setFormData(initialFormData);
-  }
+      if (editingDocumentId === documentId) {
+        setEditingDocumentId(null);
+        setFormData(initialFormData);
+      }
 
-  function handleDeleteDocument(documentId: string) {
-    const updatedDocuments = documents.filter(
-      (document) => document.id !== documentId
-    );
+      if (latestDocument?.id === documentId) {
+        setLatestDocument(null);
+      }
 
-    saveDocuments(updatedDocuments);
-  }
-
-  if (!selectedProject) {
-    return (
-      <div className="rounded-3xl border border-white/10 bg-slate-900 p-6">
-        <h1 className="text-3xl font-bold text-white">No Projects Found</h1>
-        <p className="mt-3 text-slate-400">
-          Add a project first from the Projects page before adding documents.
-        </p>
-      </div>
-    );
+      setSuccessMessage("Document deleted successfully.");
+      await loadPageData();
+    } catch {
+      setError("Unable to delete document. Check backend is running.");
+    }
   }
 
   return (
     <>
-      {/* Page Header */}
       <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-start">
         <div>
           <p className="text-sm font-bold uppercase tracking-[0.35em] text-cyan-300">
@@ -292,32 +384,64 @@ export default function DocumentsPage() {
 
           <p className="mt-3 max-w-3xl text-base leading-7 text-slate-300">
             Store and manage project-related documents such as requirements,
-            floor plans, interior mood boards, contracts, approval files,
+            floor plans, interior files, contracts, approval files,
             construction reports, and client handover documents.
           </p>
         </div>
+
+        {isEditing && (
+          <button
+            type="button"
+            onClick={resetForm}
+            className="rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:border-cyan-400 hover:text-cyan-300"
+          >
+            Cancel Edit
+          </button>
+        )}
       </div>
 
-      {/* Project Selector */}
+      {error && (
+        <div className="mb-6 rounded-2xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200">
+          {error}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="mb-6 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-4 text-sm text-emerald-200">
+          {successMessage}
+        </div>
+      )}
+
       <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
         <label className="mb-2 block text-sm font-semibold text-slate-300">
           Select Project
         </label>
 
         <select
-          value={selectedProjectId}
-          onChange={(event) => setSelectedProjectId(event.target.value)}
+          value={selectedProjectName}
+          onChange={(event) => setSelectedProjectName(event.target.value)}
           className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400"
         >
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name} - {project.client}
-            </option>
-          ))}
+          {projects.length === 0 ? (
+            <option value="">No projects found</option>
+          ) : (
+            projects.map((project) => {
+              const projectName = getProjectName(project);
+
+              return (
+                <option key={project.id} value={projectName}>
+                  {projectName} - {getProjectClient(project)}
+                </option>
+              );
+            })
+          )}
         </select>
+
+        <p className="mt-2 text-xs text-slate-500">
+          Projects are loaded from the backend Projects API.
+        </p>
       </div>
 
-      {/* Summary Cards */}
       <div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
           <p className="text-sm text-slate-400">Total Documents</p>
@@ -350,17 +474,47 @@ export default function DocumentsPage() {
         </div>
       </div>
 
-      {/* Add Document Form */}
+      {latestDocument && (
+        <div className="mt-8 rounded-3xl border border-cyan-400/20 bg-cyan-400/10 p-6 shadow-2xl shadow-black/20">
+          <h2 className="text-2xl font-bold text-white">Latest Document</h2>
+
+          <div className="mt-5 grid gap-5 md:grid-cols-3">
+            <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+              <p className="text-sm text-slate-400">Title</p>
+              <p className="mt-1 font-semibold text-white">
+                {getDocumentTitle(latestDocument)}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+              <p className="text-sm text-slate-400">Category</p>
+              <p className="mt-1 font-semibold text-white">
+                {getDocumentCategory(latestDocument)}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+              <p className="text-sm text-slate-400">Status</p>
+              <p className="mt-1 font-semibold text-white">
+                {getDocumentStatus(latestDocument)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mt-8 rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-        <h2 className="text-2xl font-bold text-white">Add Project Document</h2>
+        <h2 className="text-2xl font-bold text-white">
+          {isEditing ? "Edit Document" : "Add Project Document"}
+        </h2>
 
         <p className="mt-2 text-sm text-slate-400">
-          Add a document record for the selected project. For this frontend MVP,
-          the uploaded file name is saved in localStorage.
+          This stores document details in FastAPI + SQLite. For now, actual file
+          upload is simulated by saving the file name.
         </p>
 
         <form
-          onSubmit={handleAddDocument}
+          onSubmit={handleSaveDocument}
           className="mt-6 grid gap-5 md:grid-cols-2"
         >
           <div>
@@ -370,8 +524,10 @@ export default function DocumentsPage() {
 
             <input
               type="text"
-              value={formData.title}
-              onChange={(event) => updateField("title", event.target.value)}
+              value={formData.documentTitle}
+              onChange={(event) =>
+                updateField("documentTitle", event.target.value)
+              }
               placeholder="Example: First Floor 2D Plan"
               className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
             />
@@ -384,8 +540,10 @@ export default function DocumentsPage() {
 
             <input
               type="text"
-              value={formData.owner}
-              onChange={(event) => updateField("owner", event.target.value)}
+              value={formData.uploadedBy}
+              onChange={(event) =>
+                updateField("uploadedBy", event.target.value)
+              }
               placeholder="Example: Architect"
               className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
             />
@@ -397,10 +555,10 @@ export default function DocumentsPage() {
             </label>
 
             <select
-              value={formData.category}
+              value={formData.documentType}
               onChange={(event) =>
                 updateField(
-                  "category",
+                  "documentType",
                   event.target.value as DocumentCategory
                 )
               }
@@ -435,7 +593,7 @@ export default function DocumentsPage() {
             </select>
           </div>
 
-          <div className="md:col-span-2">
+          <div>
             <label className="mb-2 block text-sm font-semibold text-slate-300">
               Upload File
             </label>
@@ -450,23 +608,48 @@ export default function DocumentsPage() {
             />
 
             <p className="mt-2 text-xs text-slate-500">
-              MVP note: this stores only the file name. Real file upload will be
-              added later using backend storage.
+              Current MVP saves only the file name.
             </p>
           </div>
 
-          <div className="md:col-span-2">
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-300">
+              Optional File URL
+            </label>
+
+            <input
+              type="text"
+              value={formData.fileUrl}
+              onChange={(event) => updateField("fileUrl", event.target.value)}
+              placeholder="Optional document link"
+              className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
+            />
+          </div>
+
+          <div className="md:col-span-2 flex flex-wrap gap-4">
             <button
               type="submit"
-              className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300"
+              disabled={saving}
+              className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Add Document
+              {saving
+                ? "Saving..."
+                : isEditing
+                ? "Update Document"
+                : "Add Document"}
+            </button>
+
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:border-cyan-400 hover:text-cyan-300"
+            >
+              Clear
             </button>
           </div>
         </form>
       </div>
 
-      {/* Document List */}
       <div className="mt-8 rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
         <div className="mb-6">
           <h2 className="text-2xl font-bold text-white">
@@ -474,11 +657,15 @@ export default function DocumentsPage() {
           </h2>
 
           <p className="mt-2 text-sm text-slate-400">
-            Documents linked to {selectedProject.name}.
+            Documents linked to {selectedProjectName || "selected project"}.
           </p>
         </div>
 
-        {selectedProjectDocuments.length === 0 ? (
+        {loading ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-6 text-sm text-slate-400">
+            Loading documents...
+          </div>
+        ) : selectedProjectDocuments.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/15 bg-slate-950/70 p-8 text-center">
             <p className="text-sm leading-6 text-slate-400">
               No documents added for this project yet.
@@ -494,43 +681,66 @@ export default function DocumentsPage() {
                 <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
                   <div>
                     <h3 className="text-xl font-bold text-white">
-                      {document.title}
+                      {getDocumentTitle(document)}
                     </h3>
 
                     <p className="mt-2 text-sm leading-6 text-slate-400">
-                      File: {document.fileName}
+                      File: {getDocumentFileName(document)}
                     </p>
 
                     <p className="mt-1 text-sm leading-6 text-slate-400">
-                      Owner: {document.owner} · Added: {document.createdAt}
+                      Owner: {getDocumentOwner(document)} · Added:{" "}
+                      {getDocumentDate(document)}
                     </p>
+
+                    {document.ai_summary && (
+                      <p className="mt-3 text-sm leading-6 text-slate-300">
+                        {document.ai_summary}
+                      </p>
+                    )}
+
+                    {document.file_url && (
+                      <p className="mt-3 break-all text-sm text-cyan-300">
+                        URL: {document.file_url}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex flex-wrap gap-3">
                     <span
                       className={`rounded-full border px-4 py-2 text-sm font-semibold ${getCategoryStyle(
-                        document.category
+                        getDocumentCategory(document)
                       )}`}
                     >
-                      {document.category}
+                      {getDocumentCategory(document)}
                     </span>
 
                     <span
                       className={`rounded-full border px-4 py-2 text-sm font-semibold ${getStatusStyle(
-                        document.status
+                        getDocumentStatus(document)
                       )}`}
                     >
-                      {document.status}
+                      {getDocumentStatus(document)}
                     </span>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteDocument(document.id)}
-                      className="rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-400/20"
-                    >
-                      Delete
-                    </button>
                   </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleEditDocument(document)}
+                    className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/20"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteDocument(document.id)}
+                    className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-400/20"
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
             ))}
@@ -538,7 +748,6 @@ export default function DocumentsPage() {
         )}
       </div>
 
-      {/* Workflow Explanation */}
       <div className="mt-8 rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
         <h2 className="text-2xl font-bold text-white">Document Workflow</h2>
 

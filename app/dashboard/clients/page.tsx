@@ -1,552 +1,509 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  createFeedback,
+  deleteFeedback,
+  getFeedback,
+  updateFeedback,
+} from "../../lib/api";
 
-type DelayRisk = "Low" | "Medium" | "High";
-
-type Project = {
-  id: string;
-  name: string;
-  client: string;
-  location: string;
-  stage: string;
-  revenue: number;
-  progress: number;
-  clientSatisfaction: number;
-  delayRisk: DelayRisk;
+type ClientFeedback = {
+  id: number;
+  project_name: string;
+  client_name: string;
+  rating: number;
+  feedback_text: string;
+  approval_status: string;
+  response_note?: string | null;
+  sentiment_summary?: string | null;
+  created_at?: string | null;
 };
 
-type Feedback = {
-  projectId: string;
-  message: string;
+type FeedbackResponse = {
+  total: number;
+  feedback?: ClientFeedback[];
+  feedbacks?: ClientFeedback[];
+  client_feedback?: ClientFeedback[];
 };
 
-type MilestoneStatus = "Completed" | "In Progress" | "Upcoming";
-
-type Milestone = {
-  title: string;
-  status: MilestoneStatus;
-  description: string;
+type FeedbackFormData = {
+  project_name: string;
+  client_name: string;
+  rating: string;
+  feedback_text: string;
+  approval_status: string;
+  response_note: string;
+  sentiment_summary: string;
 };
 
-const STORAGE_KEY = "archiflow-projects";
-const FEEDBACK_KEY = "archiflow-client-feedback";
-
-const defaultProjects: Project[] = [
-  {
-    id: "project-1",
-    name: "Luxury Villa Design",
-    client: "Rohan Sharma",
-    location: "Chennai",
-    stage: "Design Planning",
-    revenue: 8500000,
-    progress: 42,
-    clientSatisfaction: 88,
-    delayRisk: "Medium",
-  },
-  {
-    id: "project-2",
-    name: "Apartment Interior Plan",
-    client: "Meera Homes",
-    location: "Bengaluru",
-    stage: "Interior Design",
-    revenue: 1800000,
-    progress: 68,
-    clientSatisfaction: 94,
-    delayRisk: "Low",
-  },
-];
-
-const approvals = [
-  {
-    title: "Floor Plan Approval",
-    status: "Pending",
-    description: "Client needs to approve the latest floor plan layout.",
-  },
-  {
-    title: "Interior Mood Board",
-    status: "In Review",
-    description: "Client is reviewing colors, materials, and furniture ideas.",
-  },
-  {
-    title: "Budget Confirmation",
-    status: "Approved",
-    description: "Estimated budget range has been confirmed by the client.",
-  },
-];
-
-function getRiskStyle(risk: DelayRisk) {
-  if (risk === "Low") {
-    return "border-green-400/20 bg-green-400/10 text-green-300";
-  }
-
-  if (risk === "Medium") {
-    return "border-orange-400/20 bg-orange-400/10 text-orange-300";
-  }
-
-  return "border-red-400/20 bg-red-400/10 text-red-300";
-}
-
-function getApprovalStyle(status: string) {
-  if (status === "Approved") {
-    return "border-green-400/20 bg-green-400/10 text-green-300";
-  }
-
-  if (status === "In Review") {
-    return "border-orange-400/20 bg-orange-400/10 text-orange-300";
-  }
-
-  return "border-cyan-400/20 bg-cyan-400/10 text-cyan-300";
-}
-
-function getMilestoneStyle(status: MilestoneStatus) {
-  if (status === "Completed") {
-    return "border-green-400/20 bg-green-400/10 text-green-300";
-  }
-
-  if (status === "In Progress") {
-    return "border-cyan-400/20 bg-cyan-400/10 text-cyan-300";
-  }
-
-  return "border-white/10 bg-slate-950/70 text-slate-300";
-}
-
-function formatCurrency(amount: number) {
-  if (amount >= 10000000) {
-    return `₹${(amount / 10000000).toFixed(1)}Cr`;
-  }
-
-  if (amount >= 100000) {
-    return `₹${(amount / 100000).toFixed(1)}L`;
-  }
-
-  return `₹${amount.toLocaleString("en-IN")}`;
-}
-
-function generateMilestones(stage: string): Milestone[] {
-  const normalizedStage = stage.toLowerCase();
-
-  const isRequirementStage = normalizedStage.includes("requirement");
-
-  const isDesignStage =
-    normalizedStage.includes("design") ||
-    normalizedStage.includes("interior");
-
-  const isConstructionStage = normalizedStage.includes("construction");
-
-  const isFinalStage =
-    normalizedStage.includes("final") || normalizedStage.includes("completed");
-
-  if (isRequirementStage) {
-    return [
-      {
-        title: "Requirement",
-        status: "In Progress",
-        description: "Client requirements are currently being collected.",
-      },
-      {
-        title: "Design",
-        status: "Upcoming",
-        description: "Design work will start after requirement confirmation.",
-      },
-      {
-        title: "Construction",
-        status: "Upcoming",
-        description: "Construction will start after design approval.",
-      },
-    ];
-  }
-
-  if (isDesignStage) {
-    return [
-      {
-        title: "Requirement",
-        status: "Completed",
-        description: "Client requirements have been collected.",
-      },
-      {
-        title: "Design",
-        status: "In Progress",
-        description: "Design planning or interior design is currently active.",
-      },
-      {
-        title: "Construction",
-        status: "Upcoming",
-        description: "Construction will start after design approval.",
-      },
-    ];
-  }
-
-  if (isConstructionStage) {
-    return [
-      {
-        title: "Requirement",
-        status: "Completed",
-        description: "Client requirements have been finalized.",
-      },
-      {
-        title: "Design",
-        status: "Completed",
-        description: "Design planning has been approved.",
-      },
-      {
-        title: "Construction",
-        status: "In Progress",
-        description: "Construction site work is currently being monitored.",
-      },
-    ];
-  }
-
-  if (isFinalStage) {
-    return [
-      {
-        title: "Requirement",
-        status: "Completed",
-        description: "Client requirements have been finalized.",
-      },
-      {
-        title: "Design",
-        status: "Completed",
-        description: "Design and planning work has been completed.",
-      },
-      {
-        title: "Construction",
-        status: "Completed",
-        description: "Construction and final review are completed or near handover.",
-      },
-    ];
-  }
-
-  return [
-    {
-      title: "Requirement",
-      status: "Completed",
-      description: "Requirement phase is treated as completed for this stage.",
-    },
-    {
-      title: "Design",
-      status: "In Progress",
-      description: "Design workflow is currently active.",
-    },
-    {
-      title: "Construction",
-      status: "Upcoming",
-      description: "Construction will begin after design confirmation.",
-    },
-  ];
-}
+const initialFormData: FeedbackFormData = {
+  project_name: "",
+  client_name: "",
+  rating: "4",
+  feedback_text: "",
+  approval_status: "Pending",
+  response_note: "",
+  sentiment_summary: "",
+};
 
 export default function ClientsPage() {
-  const [projects, setProjects] = useState<Project[]>(defaultProjects);
-  const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [feedbackMessage, setFeedbackMessage] = useState("");
-  const [savedFeedback, setSavedFeedback] = useState<Feedback[]>([]);
+  const [feedbackList, setFeedbackList] = useState<ClientFeedback[]>([]);
+  const [formData, setFormData] = useState<FeedbackFormData>(initialFormData);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    const storedProjects = localStorage.getItem(STORAGE_KEY);
-    const storedFeedback = localStorage.getItem(FEEDBACK_KEY);
-
-    if (storedProjects) {
-      const parsedProjects: Project[] = JSON.parse(storedProjects);
-      setProjects(parsedProjects);
-
-      if (parsedProjects.length > 0) {
-        setSelectedProjectId(parsedProjects[0].id);
-      }
-    } else {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultProjects));
-      setSelectedProjectId(defaultProjects[0].id);
-    }
-
-    if (storedFeedback) {
-      setSavedFeedback(JSON.parse(storedFeedback));
-    }
-  }, []);
-
-  const selectedProject =
-    projects.find((project) => project.id === selectedProjectId) || projects[0];
-
-  const projectMilestones = selectedProject
-    ? generateMilestones(selectedProject.stage)
-    : [];
-
-  const projectFeedback = savedFeedback.filter(
-    (feedback) => feedback.projectId === selectedProject?.id
-  );
-
-  function handleSaveFeedback() {
-    if (!selectedProject) {
-      alert("Please select a project first.");
-      return;
-    }
-
-    if (!feedbackMessage.trim()) {
-      alert("Please enter client feedback.");
-      return;
-    }
-
-    const newFeedback: Feedback = {
-      projectId: selectedProject.id,
-      message: feedbackMessage,
-    };
-
-    const updatedFeedback = [newFeedback, ...savedFeedback];
-
-    setSavedFeedback(updatedFeedback);
-    localStorage.setItem(FEEDBACK_KEY, JSON.stringify(updatedFeedback));
-    setFeedbackMessage("");
-  }
-
-  if (!selectedProject) {
+  function normalizeFeedback(response: FeedbackResponse) {
     return (
-      <div className="rounded-3xl border border-white/10 bg-slate-900 p-6">
-        <h1 className="text-3xl font-bold text-white">No Projects Found</h1>
-        <p className="mt-3 text-slate-400">
-          Add a project first from the Projects page.
-        </p>
-      </div>
+      response.feedback ||
+      response.feedbacks ||
+      response.client_feedback ||
+      []
     );
   }
 
+  async function loadFeedback() {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = (await getFeedback()) as FeedbackResponse;
+      const feedbackData = normalizeFeedback(response);
+
+      setFeedbackList(feedbackData);
+    } catch (err) {
+      console.error(err);
+      setError("Unable to load client feedback. Please check backend connection.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadFeedback();
+  }, []);
+
+  function handleChange(
+    event:
+      | React.ChangeEvent<HTMLInputElement>
+      | React.ChangeEvent<HTMLTextAreaElement>
+      | React.ChangeEvent<HTMLSelectElement>
+  ) {
+    const { name, value } = event.target;
+
+    setFormData((previousData) => ({
+      ...previousData,
+      [name]: value,
+    }));
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (
+      !formData.project_name ||
+      !formData.client_name ||
+      !formData.rating ||
+      !formData.feedback_text ||
+      !formData.approval_status
+    ) {
+      setError("Please fill all required fields before saving.");
+      return;
+    }
+
+    const payload = {
+      project_name: formData.project_name,
+      client_name: formData.client_name,
+      rating: Number(formData.rating),
+      feedback_text: formData.feedback_text,
+      approval_status: formData.approval_status,
+      response_note: formData.response_note,
+      sentiment_summary: formData.sentiment_summary,
+    };
+
+    try {
+      setSaving(true);
+      setError("");
+
+      if (editingId) {
+        await updateFeedback(editingId, payload);
+      } else {
+        await createFeedback(payload);
+      }
+
+      setFormData(initialFormData);
+      setEditingId(null);
+      await loadFeedback();
+    } catch (err) {
+      console.error(err);
+      setError("Unable to save client feedback. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleEdit(feedback: ClientFeedback) {
+    setEditingId(feedback.id);
+
+    setFormData({
+      project_name: feedback.project_name,
+      client_name: feedback.client_name,
+      rating: String(feedback.rating),
+      feedback_text: feedback.feedback_text,
+      approval_status: feedback.approval_status,
+      response_note: feedback.response_note || "",
+      sentiment_summary: feedback.sentiment_summary || "",
+    });
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  async function handleDelete(feedbackId: number) {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this client feedback?"
+    );
+
+    if (!confirmDelete) {
+      return;
+    }
+
+    try {
+      setError("");
+      await deleteFeedback(feedbackId);
+      await loadFeedback();
+    } catch (err) {
+      console.error(err);
+      setError("Unable to delete client feedback. Please try again.");
+    }
+  }
+
+  function handleCancelEdit() {
+    setEditingId(null);
+    setFormData(initialFormData);
+    setError("");
+  }
+
+  function getApprovalStyle(status: string) {
+    const normalizedStatus = status.toLowerCase();
+
+    if (normalizedStatus.includes("approved")) {
+      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+    }
+
+    if (normalizedStatus.includes("pending")) {
+      return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+    }
+
+    if (normalizedStatus.includes("rejected")) {
+      return "border-red-500/30 bg-red-500/10 text-red-300";
+    }
+
+    return "border-slate-500/30 bg-slate-500/10 text-slate-300";
+  }
+
+  function renderRating(rating: number) {
+    return "★".repeat(rating) + "☆".repeat(5 - rating);
+  }
+
   return (
-    <>
-      {/* Page Header */}
-      <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-start">
-        <div>
-          <p className="text-sm font-bold uppercase tracking-[0.35em] text-cyan-300">
-            Client Portal
-          </p>
+    <main className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
+        <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/20">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.25em] text-cyan-400">
+                Client Engagement
+              </p>
 
-          <h1 className="mt-4 text-4xl font-bold tracking-tight text-white">
-            Client Experience Platform
-          </h1>
+              <h1 className="mt-3 text-3xl font-bold tracking-tight text-white">
+                Clients & Feedback
+              </h1>
 
-          <p className="mt-3 max-w-3xl text-base leading-7 text-slate-300">
-            Give clients a clear project view with progress status, dynamic
-            milestones, approval requests, budget visibility, and feedback
-            tracking.
-          </p>
-        </div>
-      </div>
-
-      {/* Project Selector */}
-      <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-        <label className="mb-2 block text-sm font-semibold text-slate-300">
-          Select Client Project
-        </label>
-
-        <select
-          value={selectedProjectId}
-          onChange={(event) => setSelectedProjectId(event.target.value)}
-          className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400"
-        >
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name} - {project.client}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6">
-          <p className="text-sm text-slate-400">Client Name</p>
-          <h2 className="mt-3 text-2xl font-bold text-white">
-            {selectedProject.client}
-          </h2>
-          <p className="mt-2 text-sm text-slate-400">
-            Project communication owner
-          </p>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6">
-          <p className="text-sm text-slate-400">Project Stage</p>
-          <h2 className="mt-3 text-2xl font-bold text-white">
-            {selectedProject.stage}
-          </h2>
-          <p className="mt-2 text-sm text-slate-400">
-            Current workflow status
-          </p>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6">
-          <p className="text-sm text-slate-400">Project Value</p>
-          <h2 className="mt-3 text-2xl font-bold text-white">
-            {formatCurrency(selectedProject.revenue)}
-          </h2>
-          <p className="mt-2 text-sm text-slate-400">
-            Estimated project revenue
-          </p>
-        </div>
-
-        <div
-          className={`rounded-3xl border p-6 ${getRiskStyle(
-            selectedProject.delayRisk
-          )}`}
-        >
-          <p className="text-sm font-semibold">Delay Risk</p>
-          <h2 className="mt-3 text-2xl font-bold">
-            {selectedProject.delayRisk}
-          </h2>
-          <p className="mt-2 text-sm">Client-facing risk status</p>
-        </div>
-      </div>
-
-      {/* Progress and Dynamic Milestones */}
-      <div className="mt-8 grid gap-6 xl:grid-cols-3">
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20 xl:col-span-2">
-          <h2 className="text-2xl font-bold text-white">Project Progress</h2>
-
-          <p className="mt-2 text-sm text-slate-400">
-            Client-visible project progress based on current project status.
-          </p>
-
-          <div className="mt-6">
-            <div className="mb-2 flex justify-between text-sm">
-              <span className="text-slate-400">Overall Completion</span>
-              <span className="font-semibold text-cyan-300">
-                {selectedProject.progress}%
-              </span>
-            </div>
-
-            <div className="h-4 rounded-full bg-slate-800">
-              <div
-                className="h-4 rounded-full bg-cyan-400"
-                style={{ width: `${selectedProject.progress}%` }}
-              />
-            </div>
-          </div>
-
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {projectMilestones.map((milestone) => (
-              <div
-                key={milestone.title}
-                className={`rounded-2xl border p-4 ${getMilestoneStyle(
-                  milestone.status
-                )}`}
-              >
-                <p className="font-semibold">{milestone.title}</p>
-                <p className="mt-2 text-sm font-bold">{milestone.status}</p>
-                <p className="mt-2 text-sm leading-6 text-slate-300">
-                  {milestone.description}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <h2 className="text-2xl font-bold text-white">
-            Client Satisfaction
-          </h2>
-
-          <p className="mt-2 text-sm text-slate-400">
-            Current feedback score from client interactions.
-          </p>
-
-          <div className="mt-6 rounded-2xl border border-green-400/20 bg-green-400/10 p-5 text-center">
-            <p className="text-5xl font-bold text-white">
-              {selectedProject.clientSatisfaction}%
-            </p>
-            <p className="mt-2 text-sm font-semibold text-green-300">
-              Satisfaction Score
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Approval Requests */}
-      <div className="mt-8 rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-        <h2 className="text-2xl font-bold text-white">Approval Requests</h2>
-
-        <p className="mt-2 text-sm text-slate-400">
-          Client approval items required during project execution.
-        </p>
-
-        <div className="mt-6 grid gap-5 md:grid-cols-3">
-          {approvals.map((approval) => (
-            <div
-              key={approval.title}
-              className="rounded-2xl border border-white/10 bg-slate-950/70 p-5"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <h3 className="font-bold text-white">{approval.title}</h3>
-
-                <span
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${getApprovalStyle(
-                    approval.status
-                  )}`}
-                >
-                  {approval.status}
-                </span>
-              </div>
-
-              <p className="mt-4 text-sm leading-6 text-slate-400">
-                {approval.description}
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
+                Manage client feedback, approval status, design revision notes,
+                and sentiment summaries for architecture projects.
               </p>
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Feedback */}
-      <div className="mt-8 grid gap-6 xl:grid-cols-2">
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <h2 className="text-2xl font-bold text-white">
-            Add Client Feedback
-          </h2>
+            <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-5 py-4 text-right">
+              <p className="text-sm text-cyan-200">Saved Feedback</p>
+              <p className="mt-1 text-3xl font-bold text-white">
+                {feedbackList.length}
+              </p>
+            </div>
+          </div>
+        </section>
 
-          <p className="mt-2 text-sm text-slate-400">
-            Store client comments for the selected project.
-          </p>
+        {error && (
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm text-red-200">
+            {error}
+          </div>
+        )}
 
-          <textarea
-            rows={6}
-            value={feedbackMessage}
-            onChange={(event) => setFeedbackMessage(event.target.value)}
-            placeholder="Example: Client requested a warmer color palette and larger balcony space."
-            className="mt-5 w-full resize-none rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
-          />
-
-          <button
-            type="button"
-            onClick={handleSaveFeedback}
-            className="mt-5 rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300"
+        <section className="grid gap-8 xl:grid-cols-[420px_1fr]">
+          <form
+            onSubmit={handleSubmit}
+            className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/20"
           >
-            Save Feedback
-          </button>
-        </div>
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold text-white">
+                {editingId ? "Update Client Feedback" : "Add Client Feedback"}
+              </h2>
 
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/20">
-          <h2 className="text-2xl font-bold text-white">Feedback History</h2>
+              <p className="mt-2 text-sm text-slate-400">
+                Save client feedback directly to the FastAPI backend.
+              </p>
+            </div>
 
-          <p className="mt-2 text-sm text-slate-400">
-            Feedback saved for this selected project.
-          </p>
+            <div className="space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">
+                  Project Name
+                </label>
+                <input
+                  name="project_name"
+                  value={formData.project_name}
+                  onChange={handleChange}
+                  placeholder="Urban Nest Co-Living Hub"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400"
+                />
+              </div>
 
-          <div className="mt-5 space-y-4">
-            {projectFeedback.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/15 bg-slate-950/70 p-5 text-center">
-                <p className="text-sm text-slate-400">
-                  No feedback saved for this project yet.
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">
+                  Client Name
+                </label>
+                <input
+                  name="client_name"
+                  value={formData.client_name}
+                  onChange={handleChange}
+                  placeholder="NestSpace Developers"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">
+                    Rating
+                  </label>
+                  <select
+                    name="rating"
+                    value={formData.rating}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400"
+                  >
+                    <option value="5">5 - Excellent</option>
+                    <option value="4">4 - Good</option>
+                    <option value="3">3 - Average</option>
+                    <option value="2">2 - Poor</option>
+                    <option value="1">1 - Very Poor</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">
+                    Approval Status
+                  </label>
+                  <select
+                    name="approval_status"
+                    value={formData.approval_status}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400"
+                  >
+                    <option>Pending</option>
+                    <option>Approved</option>
+                    <option>Needs Revision</option>
+                    <option>Rejected</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">
+                  Feedback Text
+                </label>
+                <textarea
+                  name="feedback_text"
+                  value={formData.feedback_text}
+                  onChange={handleChange}
+                  rows={5}
+                  placeholder="Write client feedback here..."
+                  className="w-full resize-none rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">
+                  Response Note
+                </label>
+                <textarea
+                  name="response_note"
+                  value={formData.response_note}
+                  onChange={handleChange}
+                  rows={4}
+                  placeholder="Write design team response here..."
+                  className="w-full resize-none rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">
+                  Sentiment Summary
+                </label>
+                <textarea
+                  name="sentiment_summary"
+                  value={formData.sentiment_summary}
+                  onChange={handleChange}
+                  rows={3}
+                  placeholder="Client sentiment is positive..."
+                  className="w-full resize-none rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 rounded-xl bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving
+                    ? "Saving..."
+                    : editingId
+                    ? "Update Feedback"
+                    : "Save Feedback"}
+                </button>
+
+                {editingId && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="rounded-xl border border-slate-700 px-5 py-3 text-sm font-semibold text-slate-300 transition hover:border-slate-500 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </div>
+          </form>
+
+          <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/20">
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold text-white">
+                Saved Client Feedback
+              </h2>
+
+              <p className="mt-2 text-sm text-slate-400">
+                Feedback records loaded directly from your backend API.
+              </p>
+            </div>
+
+            {loading ? (
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-8 text-center text-sm text-slate-400">
+                Loading client feedback...
+              </div>
+            ) : feedbackList.length === 0 ? (
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-8 text-center">
+                <h3 className="text-lg font-semibold text-white">
+                  No feedback found
+                </h3>
+                <p className="mt-2 text-sm text-slate-400">
+                  Add client feedback using the form.
                 </p>
               </div>
             ) : (
-              projectFeedback.map((feedback, index) => (
-                <div
-                  key={`${feedback.projectId}-${index}`}
-                  className="rounded-2xl border border-white/10 bg-slate-950/70 p-5"
-                >
-                  <p className="text-sm leading-6 text-slate-300">
-                    {feedback.message}
-                  </p>
-                </div>
-              ))
+              <div className="space-y-5">
+                {feedbackList.map((feedback) => (
+                  <article
+                    key={feedback.id}
+                    className="rounded-2xl border border-slate-800 bg-slate-950 p-5 transition hover:border-cyan-500/40"
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <h3 className="text-lg font-semibold text-white">
+                            {feedback.project_name}
+                          </h3>
+
+                          <span
+                            className={`rounded-full border px-3 py-1 text-xs font-semibold ${getApprovalStyle(
+                              feedback.approval_status
+                            )}`}
+                          >
+                            {feedback.approval_status}
+                          </span>
+                        </div>
+
+                        <p className="mt-2 text-sm text-slate-400">
+                          Client: {feedback.client_name}
+                        </p>
+
+                        <p className="mt-2 text-sm font-semibold text-amber-300">
+                          {renderRating(feedback.rating)}
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEdit(feedback)}
+                          className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 transition hover:border-cyan-400 hover:text-cyan-300"
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          onClick={() => handleDelete(feedback.id)}
+                          className="rounded-lg border border-red-500/30 px-4 py-2 text-xs font-semibold text-red-300 transition hover:border-red-400 hover:text-red-200"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 space-y-4">
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-200">
+                          Client Feedback
+                        </h4>
+                        <p className="mt-2 text-sm leading-6 text-slate-400">
+                          {feedback.feedback_text}
+                        </p>
+                      </div>
+
+                      {feedback.response_note && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-slate-200">
+                            Design Team Response
+                          </h4>
+                          <p className="mt-2 text-sm leading-6 text-slate-400">
+                            {feedback.response_note}
+                          </p>
+                        </div>
+                      )}
+
+                      {feedback.sentiment_summary && (
+                        <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-4">
+                          <h4 className="text-sm font-semibold text-cyan-200">
+                            Sentiment Summary
+                          </h4>
+                          <p className="mt-2 text-sm leading-6 text-cyan-50/80">
+                            {feedback.sentiment_summary}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
             )}
-          </div>
-        </div>
+          </section>
+        </section>
       </div>
-    </>
+    </main>
   );
 }

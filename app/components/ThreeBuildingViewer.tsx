@@ -3,8 +3,9 @@
 import { Canvas } from "@react-three/fiber";
 import {
   ContactShadows,
-  Environment,
   OrbitControls,
+  Sparkles,
+  Text,
 } from "@react-three/drei";
 
 type Vec3 = [number, number, number];
@@ -18,7 +19,7 @@ type ModelType =
   | "mall"
   | "construction";
 
-type ViewerProps = {
+type ThreeBuildingViewerProps = {
   projectName?: string;
   projectStage?: string;
 };
@@ -28,56 +29,60 @@ function v(x: number, y: number, z: number): Vec3 {
 }
 
 function getModelType(projectName = "", projectStage = ""): ModelType {
-  const text = `${projectName} ${projectStage}`.toLowerCase();
+  const name = projectName.toLowerCase();
+  const stage = projectStage.toLowerCase();
 
   if (
-    text.includes("hospital") ||
-    text.includes("medical") ||
-    text.includes("clinic") ||
-    text.includes("health")
+    name.includes("hospital") ||
+    name.includes("clinic") ||
+    name.includes("medical") ||
+    name.includes("health")
   ) {
     return "hospital";
   }
 
   if (
-    text.includes("college") ||
-    text.includes("campus") ||
-    text.includes("school") ||
-    text.includes("university")
-  ) {
-    return "campus";
-  }
-
-  if (
-    text.includes("mall") ||
-    text.includes("shopping") ||
-    text.includes("retail")
-  ) {
-    return "mall";
-  }
-
-  if (
-    text.includes("commercial") ||
-    text.includes("workspace") ||
-    text.includes("office") ||
-    text.includes("tech")
+    name.includes("commercial") ||
+    name.includes("office") ||
+    name.includes("workspace") ||
+    name.includes("tech") ||
+    name.includes("park")
   ) {
     return "commercial";
   }
 
   if (
-    text.includes("apartment") ||
-    text.includes("tower") ||
-    text.includes("residential") ||
-    text.includes("complex")
+    name.includes("college") ||
+    name.includes("campus") ||
+    name.includes("school") ||
+    name.includes("university")
+  ) {
+    return "campus";
+  }
+
+  if (
+    name.includes("mall") ||
+    name.includes("shopping") ||
+    name.includes("retail")
+  ) {
+    return "mall";
+  }
+
+  if (
+    name.includes("apartment") ||
+    name.includes("tower") ||
+    name.includes("residential") ||
+    name.includes("complex")
   ) {
     return "apartment";
   }
 
   if (
-    text.includes("construction") ||
-    text.includes("monitoring") ||
-    text.includes("site")
+    name.includes("construction") ||
+    name.includes("site") ||
+    stage.includes("construction") ||
+    stage.includes("site") ||
+    stage.includes("monitoring")
   ) {
     return "construction";
   }
@@ -98,8 +103,8 @@ function getAccentColor(projectName = "") {
 
   let hash = 0;
 
-  for (let i = 0; i < projectName.length; i += 1) {
-    hash = projectName.charCodeAt(i) + ((hash << 5) - hash);
+  for (let index = 0; index < projectName.length; index += 1) {
+    hash = projectName.charCodeAt(index) + ((hash << 5) - hash);
   }
 
   return colors[Math.abs(hash) % colors.length];
@@ -109,9 +114,11 @@ function Block({
   position,
   scale,
   color,
-  roughness = 0.55,
+  roughness = 0.6,
   metalness = 0,
   opacity = 1,
+  emissive,
+  emissiveIntensity = 0,
 }: {
   position: Vec3;
   scale: Vec3;
@@ -119,16 +126,21 @@ function Block({
   roughness?: number;
   metalness?: number;
   opacity?: number;
+  emissive?: string;
+  emissiveIntensity?: number;
 }) {
   return (
     <mesh position={position} castShadow receiveShadow>
       <boxGeometry args={scale} />
+
       <meshStandardMaterial
         color={color}
         roughness={roughness}
         metalness={metalness}
         transparent={opacity < 1}
         opacity={opacity}
+        emissive={emissive}
+        emissiveIntensity={emissiveIntensity}
       />
     </mesh>
   );
@@ -137,8 +149,8 @@ function Block({
 function Glass({
   position,
   scale,
-  color = "#67e8f9",
-  opacity = 0.42,
+  color = "#93c5fd",
+  opacity = 0.45,
 }: {
   position: Vec3;
   scale: Vec3;
@@ -148,13 +160,13 @@ function Glass({
   return (
     <mesh position={position} castShadow receiveShadow>
       <boxGeometry args={scale} />
-      <meshPhysicalMaterial
+
+      <meshStandardMaterial
         color={color}
         roughness={0.08}
-        metalness={0.2}
+        metalness={0.12}
         transparent
         opacity={opacity}
-        transmission={0.2}
       />
     </mesh>
   );
@@ -162,7 +174,7 @@ function Glass({
 
 function Cylinder({
   position,
-  radius = 0.1,
+  radius = 0.08,
   height = 1,
   color = "#94a3b8",
 }: {
@@ -173,26 +185,9 @@ function Cylinder({
 }) {
   return (
     <mesh position={position} castShadow receiveShadow>
-      <cylinderGeometry args={[radius, radius, height, 32]} />
+      <cylinderGeometry args={[radius, radius, height, 24]} />
       <meshStandardMaterial color={color} roughness={0.55} />
     </mesh>
-  );
-}
-
-function Slab({
-  position,
-  scale,
-}: {
-  position: Vec3;
-  scale: Vec3;
-}) {
-  return (
-    <Block
-      position={position}
-      scale={scale}
-      color="#111827"
-      roughness={0.75}
-    />
   );
 }
 
@@ -201,35 +196,25 @@ function BaseSite() {
     <>
       <Block
         position={v(0, -0.08, 0)}
-        scale={v(10.5, 0.16, 7.4)}
+        scale={v(9.5, 0.16, 6.8)}
         color="#020617"
         roughness={0.9}
       />
 
       <Block
-        position={v(0, 0, 0)}
-        scale={v(9.7, 0.04, 6.65)}
-        color="#0f172a"
+        position={v(0, -0.01, 0)}
+        scale={v(8.8, 0.04, 6.1)}
+        color="#07111f"
         roughness={0.85}
       />
-    </>
-  );
-}
 
-function Road({
-  position,
-  scale,
-}: {
-  position: Vec3;
-  scale: Vec3;
-}) {
-  return (
-    <Block
-      position={position}
-      scale={scale}
-      color="#1e293b"
-      roughness={0.82}
-    />
+      <Block
+        position={v(0, 0.04, 2.55)}
+        scale={v(7.3, 0.06, 1.15)}
+        color="#1e293b"
+        roughness={0.82}
+      />
+    </>
   );
 }
 
@@ -244,9 +229,32 @@ function Landscape({
     <Block
       position={position}
       scale={scale}
-      color="#14532d"
-      roughness={0.82}
+      color="#166534"
+      roughness={0.8}
     />
+  );
+}
+
+function Tree({ position }: { position: Vec3 }) {
+  return (
+    <group position={position}>
+      <Cylinder
+        position={v(0, 0.28, 0)}
+        radius={0.055}
+        height={0.56}
+        color="#78350f"
+      />
+
+      <mesh position={v(0, 0.78, 0)} castShadow>
+        <coneGeometry args={[0.28, 0.75, 24]} />
+        <meshStandardMaterial color="#15803d" roughness={0.6} />
+      </mesh>
+
+      <mesh position={v(0, 1.08, 0)} castShadow>
+        <coneGeometry args={[0.22, 0.55, 24]} />
+        <meshStandardMaterial color="#22c55e" roughness={0.6} />
+      </mesh>
+    </group>
   );
 }
 
@@ -254,14 +262,15 @@ function LightPost({ position }: { position: Vec3 }) {
   return (
     <group position={position}>
       <Cylinder
-        position={v(0, 0.25, 0)}
+        position={v(0, 0.28, 0)}
         radius={0.025}
-        height={0.5}
+        height={0.56}
         color="#94a3b8"
       />
 
-      <mesh position={v(0, 0.55, 0)} castShadow>
+      <mesh position={v(0, 0.62, 0)} castShadow>
         <sphereGeometry args={[0.075, 18, 18]} />
+
         <meshStandardMaterial
           color="#fde68a"
           emissive="#facc15"
@@ -269,32 +278,14 @@ function LightPost({ position }: { position: Vec3 }) {
         />
       </mesh>
 
-      <pointLight position={v(0, 0.6, 0)} intensity={0.28} distance={1.8} />
+      <pointLight position={v(0, 0.7, 0)} intensity={0.35} distance={1.8} />
     </group>
   );
 }
 
-function TreeColumn({ position }: { position: Vec3 }) {
-  return (
-    <group position={position}>
-      <Cylinder
-        position={v(0, 0.35, 0)}
-        radius={0.05}
-        height={0.7}
-        color="#713f12"
-      />
-
-      <mesh position={v(0, 0.9, 0)} castShadow>
-        <icosahedronGeometry args={[0.38, 1]} />
-        <meshStandardMaterial color="#166534" roughness={0.65} />
-      </mesh>
-    </group>
-  );
-}
-
-function Car({
+function Vehicle({
   position,
-  color = "#334155",
+  color = "#2563eb",
 }: {
   position: Vec3;
   color?: string;
@@ -302,185 +293,170 @@ function Car({
   return (
     <group position={position}>
       <Block
-        position={v(0, 0.14, 0)}
-        scale={v(0.8, 0.24, 0.42)}
+        position={v(0, 0.16, 0)}
+        scale={v(0.9, 0.28, 0.48)}
         color={color}
-        roughness={0.5}
       />
 
       <Glass
-        position={v(0, 0.32, 0.02)}
-        scale={v(0.45, 0.18, 0.32)}
-        color="#bfdbfe"
-        opacity={0.45}
+        position={v(0, 0.38, 0)}
+        scale={v(0.5, 0.22, 0.34)}
+        color="#bae6fd"
+        opacity={0.75}
       />
+
+      <mesh position={v(-0.32, 0, 0.28)} rotation={v(Math.PI / 2, 0, 0)}>
+        <cylinderGeometry args={[0.08, 0.08, 0.08, 18]} />
+        <meshStandardMaterial color="#020617" />
+      </mesh>
+
+      <mesh position={v(0.32, 0, 0.28)} rotation={v(Math.PI / 2, 0, 0)}>
+        <cylinderGeometry args={[0.08, 0.08, 0.08, 18]} />
+        <meshStandardMaterial color="#020617" />
+      </mesh>
     </group>
   );
 }
 
-function WindowGrid({
-  floors,
-  columns,
-  startX,
-  startY,
-  z,
-  gapX,
-  gapY,
-  accent,
+function FloatingLabel({
+  text,
+  position,
+  color = "#f8fafc",
 }: {
-  floors: number;
-  columns: number;
-  startX: number;
-  startY: number;
-  z: number;
-  gapX: number;
-  gapY: number;
-  accent: string;
+  text: string;
+  position: Vec3;
+  color?: string;
 }) {
   return (
-    <>
-      {Array.from({ length: floors }).map((_, floor) => (
-        <group key={floor}>
-          {Array.from({ length: columns }).map((__, column) => (
-            <Glass
-              key={`${floor}-${column}`}
-              position={v(
-                startX + column * gapX,
-                startY + floor * gapY,
-                z
-              )}
-              scale={v(0.34, 0.26, 0.055)}
-              color={accent}
-              opacity={0.42}
-            />
-          ))}
-        </group>
-      ))}
-    </>
+    <Text
+      position={position}
+      fontSize={0.22}
+      color={color}
+      anchorX="center"
+      anchorY="middle"
+      outlineWidth={0.01}
+      outlineColor="#020617"
+    >
+      {text}
+    </Text>
   );
 }
 
-function VerticalFins({
-  count,
-  startX,
-  y,
-  z,
-  height,
-}: {
-  count: number;
-  startX: number;
-  y: number;
-  z: number;
-  height: number;
-}) {
-  return (
-    <>
-      {Array.from({ length: count }).map((_, index) => (
-        <Block
-          key={index}
-          position={v(startX + index * 0.5, y, z)}
-          scale={v(0.04, height, 0.12)}
-          color="#0f172a"
-          roughness={0.7}
-        />
-      ))}
-    </>
-  );
-}
-
-/* 1. Luxury Villa */
 function VillaModel({ accent }: { accent: string }) {
   return (
     <group rotation={v(0, -0.35, 0)}>
       <BaseSite />
 
-      <Landscape position={v(-3.2, 0.03, 2.0)} scale={v(2.2, 0.05, 1.6)} />
-      <Landscape position={v(3.2, 0.03, 2.0)} scale={v(2.1, 0.05, 1.6)} />
-      <Road position={v(0.1, 0.05, 2.55)} scale={v(3.0, 0.06, 1.35)} />
+      <Landscape
+        position={v(-3.1, 0.02, 1.35)}
+        scale={v(1.9, 0.05, 1.25)}
+      />
+
+      <Landscape
+        position={v(3.1, 0.02, 1.35)}
+        scale={v(1.9, 0.05, 1.25)}
+      />
 
       <Block
-        position={v(-0.9, 0.55, -0.4)}
-        scale={v(3.8, 1.1, 2.35)}
+        position={v(-0.9, 0.55, -0.35)}
+        scale={v(3.8, 1.1, 2.45)}
         color="#d8dee8"
       />
 
       <Block
-        position={v(1.4, 1.08, -0.45)}
-        scale={v(2.2, 2.05, 2.15)}
+        position={v(1.35, 1.08, -0.45)}
+        scale={v(2.25, 2.05, 2.2)}
         color="#f8fafc"
       />
 
       <Block
-        position={v(-2.55, 0.68, -0.45)}
-        scale={v(1.0, 1.35, 2.0)}
-        color="#273449"
-      />
-
-      <Block
-        position={v(-0.65, 1.8, -0.2)}
+        position={v(-0.75, 1.82, -0.18)}
         scale={v(3.25, 1.05, 2.05)}
-        color="#e5e7eb"
+        color="#e6edf5"
       />
 
-      <Slab position={v(-0.65, 2.45, -0.2)} scale={v(3.6, 0.16, 2.35)} />
-      <Slab position={v(1.45, 2.18, -0.45)} scale={v(2.55, 0.16, 2.5)} />
-
-      <Glass position={v(-0.5, 0.75, 0.84)} scale={v(1.25, 0.7, 0.06)} color={accent} />
-      <Glass position={v(1.05, 0.75, 0.84)} scale={v(1.1, 0.7, 0.06)} color={accent} />
-      <Glass position={v(-1.2, 1.88, 0.68)} scale={v(1.05, 0.55, 0.06)} color={accent} />
-      <Glass position={v(0.35, 1.88, 0.68)} scale={v(1.05, 0.55, 0.06)} color={accent} />
+      <Block
+        position={v(-0.75, 2.45, -0.18)}
+        scale={v(3.55, 0.16, 2.35)}
+        color="#07111f"
+      />
 
       <Block
-        position={v(-0.65, 1.38, 1.1)}
-        scale={v(2.45, 0.12, 0.55)}
-        color="#334155"
+        position={v(1.35, 2.18, -0.45)}
+        scale={v(2.55, 0.16, 2.5)}
+        color="#07111f"
       />
 
       <Glass
-        position={v(-0.65, 1.68, 1.38)}
-        scale={v(2.45, 0.42, 0.06)}
-        color="#dbeafe"
-        opacity={0.35}
+        position={v(-0.55, 0.75, 0.9)}
+        scale={v(1.3, 0.7, 0.07)}
+        color={accent}
+      />
+
+      <Glass
+        position={v(1.0, 0.75, 0.9)}
+        scale={v(1.1, 0.7, 0.07)}
+        color={accent}
+      />
+
+      <Glass
+        position={v(-1.2, 1.88, 0.72)}
+        scale={v(1.05, 0.55, 0.07)}
+        color={accent}
       />
 
       <Block
         position={v(2.55, 0.08, -1.75)}
-        scale={v(2.25, 0.05, 1.2)}
+        scale={v(2.35, 0.05, 1.25)}
         color="#e2e8f0"
       />
 
-      <Glass
-        position={v(2.55, 0.15, -1.75)}
-        scale={v(2.0, 0.06, 0.95)}
-        color="#38bdf8"
-        opacity={0.55}
+      <mesh position={v(2.55, 0.14, -1.75)} receiveShadow>
+        <boxGeometry args={[2.1, 0.05, 1.0]} />
+
+        <meshStandardMaterial
+          color="#38bdf8"
+          roughness={0.05}
+          metalness={0.08}
+          transparent
+          opacity={0.78}
+        />
+      </mesh>
+
+      <Vehicle position={v(0.75, 0.16, 2.55)} color={accent} />
+
+      <Tree position={v(-3.7, 0, -2.2)} />
+      <Tree position={v(3.7, 0, -2.25)} />
+      <Tree position={v(3.7, 0, 1.8)} />
+
+      <LightPost position={v(-2.6, 0, 2.95)} />
+      <LightPost position={v(0, 0, 2.95)} />
+      <LightPost position={v(2.6, 0, 2.95)} />
+
+      <FloatingLabel
+        text="VILLA"
+        position={v(0, 2.9, 0.4)}
+        color={accent}
       />
-
-      <Car position={v(0.75, 0.16, 2.55)} color={accent} />
-
-      <TreeColumn position={v(-3.7, 0, -2.3)} />
-      <TreeColumn position={v(3.75, 0, -2.35)} />
-      <TreeColumn position={v(3.75, 0, 1.35)} />
-
-      <LightPost position={v(-3.2, 0, 1.2)} />
-      <LightPost position={v(-1.4, 0, 2.9)} />
-      <LightPost position={v(2.2, 0, 2.9)} />
     </group>
   );
 }
 
-/* 2. Apartment Tower */
-function ApartmentTowerModel({ accent }: { accent: string }) {
+function ApartmentModel({ accent }: { accent: string }) {
+  const floors = [0, 1, 2, 3, 4, 5, 6];
+
   return (
     <group rotation={v(0, -0.28, 0)}>
       <BaseSite />
 
-      <Road position={v(0, 0.05, 2.55)} scale={v(6.9, 0.06, 1.15)} />
-      <Landscape position={v(3.05, 0.04, 1.35)} scale={v(1.25, 0.05, 1.0)} />
+      <Landscape
+        position={v(3.1, 0.02, 1.2)}
+        scale={v(1.4, 0.05, 1.1)}
+      />
 
       <Block
         position={v(0, 0.35, 0.2)}
-        scale={v(5.3, 0.7, 2.2)}
+        scale={v(5.2, 0.7, 2.2)}
         color="#475569"
       />
 
@@ -502,135 +478,222 @@ function ApartmentTowerModel({ accent }: { accent: string }) {
         color="#94a3b8"
       />
 
-      <Slab position={v(0, 4.7, -0.35)} scale={v(3.6, 0.18, 2.35)} />
-
-      <WindowGrid
-        floors={7}
-        columns={4}
-        startX={-0.9}
-        startY={0.65}
-        z={0.68}
-        gapX={0.6}
-        gapY={0.55}
-        accent={accent}
-      />
-
-      <VerticalFins
-        count={7}
-        startX={-1.45}
-        y={2.25}
-        z={0.95}
-        height={3.4}
-      />
-
       <Block
-        position={v(-3.1, 0.5, 1.35)}
-        scale={v(1.2, 1.0, 1.1)}
-        color="#0f172a"
+        position={v(0, 4.7, -0.35)}
+        scale={v(3.55, 0.18, 2.35)}
+        color="#07111f"
       />
 
-      <Glass
-        position={v(-3.1, 0.62, 1.93)}
-        scale={v(0.7, 0.48, 0.06)}
+      {floors.map((floor) => (
+        <group key={floor}>
+          {[-0.9, -0.3, 0.3, 0.9].map((x) => (
+            <Glass
+              key={`${floor}-${x}`}
+              position={v(x, 0.65 + floor * 0.55, 0.68)}
+              scale={v(0.35, 0.26, 0.06)}
+              color={accent}
+            />
+          ))}
+
+          <Block
+            position={v(0, 0.45 + floor * 0.55, 0.93)}
+            scale={v(2.3, 0.06, 0.28)}
+            color="#1e293b"
+          />
+        </group>
+      ))}
+
+      <Vehicle position={v(-1.2, 0.16, 2.55)} color="#334155" />
+      <Vehicle position={v(1.25, 0.16, 2.55)} color={accent} />
+
+      <Tree position={v(-3.7, 0, -2.2)} />
+      <Tree position={v(3.7, 0, -2.2)} />
+
+      <LightPost position={v(-2.6, 0, 2.95)} />
+      <LightPost position={v(0, 0, 2.95)} />
+      <LightPost position={v(2.6, 0, 2.95)} />
+
+      <FloatingLabel
+        text="APARTMENT TOWER"
+        position={v(0, 5.15, 0.5)}
         color={accent}
       />
-
-      <Car position={v(-1.2, 0.16, 2.55)} color="#334155" />
-      <Car position={v(1.25, 0.16, 2.55)} color={accent} />
-
-      <TreeColumn position={v(-3.65, 0, -2.15)} />
-      <TreeColumn position={v(3.65, 0, -2.15)} />
-
-      <LightPost position={v(-2.4, 0, 2.95)} />
-      <LightPost position={v(0, 0, 2.95)} />
-      <LightPost position={v(2.4, 0, 2.95)} />
     </group>
   );
 }
 
-/* 3. Commercial Office */
-function CommercialOfficeModel({ accent }: { accent: string }) {
+function CommercialModel({ accent }: { accent: string }) {
   return (
     <group rotation={v(0, -0.35, 0)}>
       <BaseSite />
 
-      <Road position={v(0, 0.05, 2.42)} scale={v(6.6, 0.06, 1.3)} />
-
       <Block
-        position={v(-1.35, 1.55, -0.35)}
-        scale={v(2.65, 3.1, 2.25)}
-        color="#e2e8f0"
+        position={v(0, 0.05, 2.55)}
+        scale={v(7.3, 0.08, 1.1)}
+        color="#1e293b"
+        roughness={0.82}
+      />
+
+      <Landscape
+        position={v(-3.25, 0.03, 1.35)}
+        scale={v(1.5, 0.06, 1.2)}
+      />
+
+      <Landscape
+        position={v(3.25, 0.03, 1.35)}
+        scale={v(1.5, 0.06, 1.2)}
       />
 
       <Block
-        position={v(1.65, 1.85, -0.4)}
-        scale={v(2.1, 3.7, 2.0)}
+        position={v(0, 2.15, -0.65)}
+        scale={v(2.8, 4.3, 1.8)}
+        color="#e5e7eb"
+        roughness={0.45}
+      />
+
+      <Block
+        position={v(-2.15, 1.45, -0.45)}
+        scale={v(1.65, 2.9, 1.65)}
         color="#111827"
+        roughness={0.42}
       />
 
       <Block
-        position={v(-3.05, 0.85, -0.4)}
-        scale={v(1.15, 1.7, 1.8)}
-        color="#475569"
+        position={v(2.15, 1.45, -0.45)}
+        scale={v(1.65, 2.9, 1.65)}
+        color="#111827"
+        roughness={0.42}
       />
 
       <Glass
-        position={v(-1.35, 1.55, 0.8)}
-        scale={v(2.2, 2.2, 0.07)}
+        position={v(0, 2.2, 0.28)}
+        scale={v(2.25, 3.35, 0.08)}
         color={accent}
+        opacity={0.48}
+      />
+
+      <Glass
+        position={v(-2.15, 1.48, 0.4)}
+        scale={v(1.2, 2.15, 0.08)}
+        color="#93c5fd"
         opacity={0.45}
       />
 
       <Glass
-        position={v(1.65, 1.85, 0.63)}
-        scale={v(1.4, 2.65, 0.07)}
+        position={v(2.15, 1.48, 0.4)}
+        scale={v(1.2, 2.15, 0.08)}
         color="#93c5fd"
-        opacity={0.44}
+        opacity={0.45}
       />
 
-      <Slab position={v(0.15, 3.45, -0.38)} scale={v(5.0, 0.18, 2.5)} />
+      {[0.95, 1.45, 1.95, 2.45, 2.95, 3.45].map((height) => (
+        <Block
+          key={height}
+          position={v(0, height, 0.38)}
+          scale={v(2.5, 0.035, 0.08)}
+          color="#0f172a"
+          opacity={0.85}
+        />
+      ))}
+
+      {[0.75, 1.25, 1.75, 2.25].map((height) => (
+        <group key={height}>
+          <Block
+            position={v(-2.15, height, 0.5)}
+            scale={v(1.3, 0.035, 0.08)}
+            color="#334155"
+          />
+
+          <Block
+            position={v(2.15, height, 0.5)}
+            scale={v(1.3, 0.035, 0.08)}
+            color="#334155"
+          />
+        </group>
+      ))}
 
       <Block
-        position={v(0.1, 0.42, 1.0)}
-        scale={v(1.35, 0.84, 0.12)}
+        position={v(0, 4.42, -0.65)}
+        scale={v(3.25, 0.18, 2.15)}
         color="#020617"
+        roughness={0.5}
       />
 
       <Block
-        position={v(0.15, 0.14, 1.65)}
-        scale={v(3.4, 0.08, 0.8)}
-        color="#334155"
+        position={v(-2.15, 2.98, -0.45)}
+        scale={v(1.9, 0.16, 1.95)}
+        color="#020617"
+        roughness={0.5}
       />
 
       <Block
-        position={v(0.15, 3.78, -0.25)}
-        scale={v(1.2, 0.08, 1.2)}
+        position={v(2.15, 2.98, -0.45)}
+        scale={v(1.9, 0.16, 1.95)}
+        color="#020617"
+        roughness={0.5}
+      />
+
+      <Block
+        position={v(0, 0.28, 0.92)}
+        scale={v(2.7, 0.56, 0.55)}
+        color="#0f172a"
+        roughness={0.55}
+      />
+
+      <Glass
+        position={v(0, 0.62, 1.22)}
+        scale={v(1.45, 0.7, 0.08)}
+        color="#dbeafe"
+        opacity={0.55}
+      />
+
+      <Block
+        position={v(0, 0.08, 1.65)}
+        scale={v(2.1, 0.08, 0.45)}
+        color="#475569"
+      />
+
+      <Block
+        position={v(0, 0.14, 1.95)}
+        scale={v(2.55, 0.08, 0.4)}
+        color="#64748b"
+      />
+
+      <Block
+        position={v(0, 4.62, 0.08)}
+        scale={v(1.8, 0.08, 0.16)}
         color={accent}
         emissive={accent}
-        emissiveIntensity={0.22}
+        emissiveIntensity={0.35}
       />
 
-      <Car position={v(-1.4, 0.16, 2.5)} color={accent} />
-      <Car position={v(1.25, 0.16, 2.5)} color="#f97316" />
+      <Vehicle position={v(-1.65, 0.16, 2.55)} color="#334155" />
+      <Vehicle position={v(0.4, 0.16, 2.55)} color={accent} />
+      <Vehicle position={v(2.35, 0.16, 2.55)} color="#f97316" />
 
-      <TreeColumn position={v(-3.7, 0, 1.45)} />
-      <TreeColumn position={v(3.75, 0, 1.45)} />
-      <TreeColumn position={v(-3.65, 0, -2.25)} />
+      <Tree position={v(-3.75, 0, 1.85)} />
+      <Tree position={v(3.75, 0, 1.85)} />
+      <Tree position={v(-3.75, 0, -2.2)} />
+      <Tree position={v(3.75, 0, -2.2)} />
 
-      <LightPost position={v(-2.6, 0, 2.9)} />
-      <LightPost position={v(0, 0, 2.95)} />
-      <LightPost position={v(2.6, 0, 2.9)} />
+      <LightPost position={v(-2.8, 0, 2.95)} />
+      <LightPost position={v(-0.8, 0, 2.95)} />
+      <LightPost position={v(0.8, 0, 2.95)} />
+      <LightPost position={v(2.8, 0, 2.95)} />
+
+      <FloatingLabel
+        text="NOVA TECH OFFICE"
+        position={v(0, 4.95, 0.35)}
+        color={accent}
+      />
     </group>
   );
 }
 
-/* 4. College Campus */
 function CampusModel({ accent }: { accent: string }) {
   return (
     <group rotation={v(0, -0.3, 0)}>
       <BaseSite />
-
-      <Road position={v(0, 0.05, 2.55)} scale={v(7.2, 0.06, 1.05)} />
 
       <Block
         position={v(0, 0.78, -0.75)}
@@ -650,7 +713,11 @@ function CampusModel({ accent }: { accent: string }) {
         color="#94a3b8"
       />
 
-      <Slab position={v(0, 1.65, -0.75)} scale={v(4.7, 0.18, 2.05)} />
+      <Block
+        position={v(0, 1.65, -0.75)}
+        scale={v(4.7, 0.18, 2.05)}
+        color="#07111f"
+      />
 
       {[-1.55, -0.75, 0.05, 0.85, 1.65].map((x) => (
         <Glass
@@ -665,12 +732,6 @@ function CampusModel({ accent }: { accent: string }) {
         position={v(0, 0.44, 0.26)}
         scale={v(0.9, 0.78, 0.1)}
         color="#0f172a"
-      />
-
-      <Block
-        position={v(0, 0.12, 1.15)}
-        scale={v(1.65, 0.07, 1.35)}
-        color="#64748b"
       />
 
       <Landscape
@@ -690,45 +751,28 @@ function CampusModel({ accent }: { accent: string }) {
         color="#f8fafc"
       />
 
-      <Block
-        position={v(-3.15, 0.38, 0.75)}
-        scale={v(0.85, 0.76, 0.9)}
-        color="#475569"
-      />
-
-      <Block
-        position={v(3.15, 0.38, 0.75)}
-        scale={v(0.85, 0.76, 0.9)}
-        color="#475569"
-      />
-
-      <Block
-        position={v(0, 1.88, -0.75)}
-        scale={v(1.1, 0.08, 0.8)}
-        color={accent}
-        emissive={accent}
-        emissiveIntensity={0.2}
-      />
-
-      <TreeColumn position={v(-3.75, 0, 2.2)} />
-      <TreeColumn position={v(3.75, 0, 2.2)} />
-      <TreeColumn position={v(-3.65, 0, -2.35)} />
-      <TreeColumn position={v(3.65, 0, -2.35)} />
+      <Tree position={v(-3.75, 0, 2.2)} />
+      <Tree position={v(3.75, 0, 2.2)} />
+      <Tree position={v(-3.65, 0, -2.35)} />
+      <Tree position={v(3.65, 0, -2.35)} />
 
       <LightPost position={v(-2.7, 0, 2.95)} />
       <LightPost position={v(0, 0, 2.95)} />
       <LightPost position={v(2.7, 0, 2.95)} />
+
+      <FloatingLabel
+        text="CAMPUS BLOCK"
+        position={v(0, 2.05, 0.45)}
+        color={accent}
+      />
     </group>
   );
 }
 
-/* 5. Hospital Building */
 function HospitalModel({ accent }: { accent: string }) {
   return (
     <group rotation={v(0, -0.28, 0)}>
       <BaseSite />
-
-      <Road position={v(0, 0.05, 2.5)} scale={v(7.0, 0.06, 1.12)} />
 
       <Block
         position={v(0, 1.2, -0.38)}
@@ -748,7 +792,11 @@ function HospitalModel({ accent }: { accent: string }) {
         color="#dbeafe"
       />
 
-      <Slab position={v(0, 2.5, -0.38)} scale={v(4.6, 0.18, 2.45)} />
+      <Block
+        position={v(0, 2.5, -0.38)}
+        scale={v(4.6, 0.18, 2.45)}
+        color="#07111f"
+      />
 
       <Block
         position={v(0, 1.48, 0.73)}
@@ -787,7 +835,7 @@ function HospitalModel({ accent }: { accent: string }) {
         color="#334155"
       />
 
-      <Car position={v(2.7, 0.16, 1.85)} color="#ffffff" />
+      <Vehicle position={v(2.7, 0.16, 1.85)} color="#ffffff" />
 
       <Block
         position={v(2.7, 0.52, 2.13)}
@@ -818,23 +866,26 @@ function HospitalModel({ accent }: { accent: string }) {
         color="#ef4444"
       />
 
-      <TreeColumn position={v(-3.75, 0, 1.8)} />
-      <TreeColumn position={v(3.75, 0, -2.15)} />
+      <Tree position={v(-3.75, 0, 1.8)} />
+      <Tree position={v(3.75, 0, -2.15)} />
 
       <LightPost position={v(-2.5, 0, 2.9)} />
       <LightPost position={v(0, 0, 2.95)} />
       <LightPost position={v(2.5, 0, 2.9)} />
+
+      <FloatingLabel
+        text="HOSPITAL"
+        position={v(0, 2.9, 0.45)}
+        color="#ef4444"
+      />
     </group>
   );
 }
 
-/* 6. Shopping Mall */
 function MallModel({ accent }: { accent: string }) {
   return (
     <group rotation={v(0, -0.35, 0)}>
       <BaseSite />
-
-      <Road position={v(0, 0.05, 2.55)} scale={v(7.2, 0.06, 1.05)} />
 
       <Block
         position={v(0, 0.95, -0.45)}
@@ -842,7 +893,11 @@ function MallModel({ accent }: { accent: string }) {
         color="#e2e8f0"
       />
 
-      <Slab position={v(0, 2.0, -0.45)} scale={v(5.85, 0.18, 2.65)} />
+      <Block
+        position={v(0, 2.0, -0.45)}
+        scale={v(5.85, 0.18, 2.65)}
+        color="#07111f"
+      />
 
       <Glass
         position={v(0, 0.95, 0.76)}
@@ -873,35 +928,28 @@ function MallModel({ accent }: { accent: string }) {
         emissiveIntensity={0.25}
       />
 
-      <Block
-        position={v(-2.8, 0.08, 1.65)}
-        scale={v(1.2, 0.08, 0.78)}
-        color="#334155"
-      />
+      <Vehicle position={v(-2.6, 0.16, 2.45)} color="#f97316" />
+      <Vehicle position={v(0, 0.16, 2.45)} color="#22c55e" />
+      <Vehicle position={v(2.6, 0.16, 2.45)} color="#3b82f6" />
 
-      <Block
-        position={v(2.8, 0.08, 1.65)}
-        scale={v(1.2, 0.08, 0.78)}
-        color="#334155"
-      />
-
-      <Car position={v(-2.6, 0.16, 2.45)} color="#f97316" />
-      <Car position={v(0, 0.16, 2.45)} color="#22c55e" />
-      <Car position={v(2.6, 0.16, 2.45)} color="#3b82f6" />
-
-      <TreeColumn position={v(-3.75, 0, 2.15)} />
-      <TreeColumn position={v(3.75, 0, 2.15)} />
-      <TreeColumn position={v(-3.75, 0, -2.2)} />
-      <TreeColumn position={v(3.75, 0, -2.2)} />
+      <Tree position={v(-3.75, 0, 2.15)} />
+      <Tree position={v(3.75, 0, 2.15)} />
+      <Tree position={v(-3.75, 0, -2.2)} />
+      <Tree position={v(3.75, 0, -2.2)} />
 
       <LightPost position={v(-2.7, 0, 2.95)} />
       <LightPost position={v(0, 0, 2.95)} />
       <LightPost position={v(2.7, 0, 2.95)} />
+
+      <FloatingLabel
+        text="SHOPPING MALL"
+        position={v(0, 2.4, 0.6)}
+        color={accent}
+      />
     </group>
   );
 }
 
-/* 7. Construction Site */
 function ConstructionModel({ accent }: { accent: string }) {
   return (
     <group rotation={v(0, -0.32, 0)}>
@@ -968,23 +1016,17 @@ function ConstructionModel({ accent }: { accent: string }) {
         color={accent}
       />
 
-      <Car position={v(2.55, 0.16, 1.45)} color="#f97316" />
-
-      <Block
-        position={v(-3.2, 0.18, 1.55)}
-        scale={v(1.05, 0.36, 0.78)}
-        color="#334155"
-      />
-
-      <Block
-        position={v(3.25, 0.18, -1.9)}
-        scale={v(0.95, 0.34, 0.95)}
-        color="#64748b"
-      />
+      <Vehicle position={v(2.55, 0.16, 1.45)} color="#f97316" />
 
       <LightPost position={v(-2.8, 0, 2.75)} />
       <LightPost position={v(0, 0, 2.85)} />
       <LightPost position={v(2.8, 0, 2.75)} />
+
+      <FloatingLabel
+        text="CONSTRUCTION SITE"
+        position={v(0, 2.7, 0.4)}
+        color={accent}
+      />
     </group>
   );
 }
@@ -996,20 +1038,12 @@ function ProjectBasedModel({
   modelType: ModelType;
   accent: string;
 }) {
-  if (modelType === "apartment") {
-    return <ApartmentTowerModel accent={accent} />;
-  }
-
-  if (modelType === "commercial") {
-    return <CommercialOfficeModel accent={accent} />;
+  if (modelType === "hospital") {
+    return <HospitalModel accent={accent} />;
   }
 
   if (modelType === "campus") {
     return <CampusModel accent={accent} />;
-  }
-
-  if (modelType === "hospital") {
-    return <HospitalModel accent={accent} />;
   }
 
   if (modelType === "mall") {
@@ -1020,13 +1054,21 @@ function ProjectBasedModel({
     return <ConstructionModel accent={accent} />;
   }
 
+  if (modelType === "commercial") {
+    return <CommercialModel accent={accent} />;
+  }
+
+  if (modelType === "apartment") {
+    return <ApartmentModel accent={accent} />;
+  }
+
   return <VillaModel accent={accent} />;
 }
 
 export default function ThreeBuildingViewer({
   projectName,
   projectStage,
-}: ViewerProps) {
+}: ThreeBuildingViewerProps) {
   const modelType = getModelType(projectName, projectStage);
   const accent = getAccentColor(projectName);
 
@@ -1045,11 +1087,11 @@ export default function ThreeBuildingViewer({
         <color attach="background" args={["#020617"]} />
         <fog attach="fog" args={["#020617", 9, 18]} />
 
-        <ambientLight intensity={0.45} />
+        <ambientLight intensity={0.55} />
 
         <directionalLight
           position={[5, 8, 6]}
-          intensity={2.1}
+          intensity={1.9}
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
@@ -1057,25 +1099,31 @@ export default function ThreeBuildingViewer({
 
         <pointLight
           position={[-3, 3.2, 4]}
-          intensity={0.5}
+          intensity={0.55}
           color="#38bdf8"
         />
 
         <pointLight
           position={[4, 2.8, -3]}
-          intensity={0.35}
+          intensity={0.45}
           color="#a78bfa"
         />
 
-        <Environment preset="city" />
+        <Sparkles
+          count={28}
+          scale={[8, 4, 6]}
+          size={1.1}
+          speed={0.25}
+          opacity={0.2}
+        />
 
         <ProjectBasedModel modelType={modelType} accent={accent} />
 
         <ContactShadows
           position={[0, -0.02, 0]}
-          opacity={0.68}
-          scale={10}
-          blur={3}
+          opacity={0.62}
+          scale={9}
+          blur={2.8}
           far={5}
         />
 
